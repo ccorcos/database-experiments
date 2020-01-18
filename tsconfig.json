@@ -1,20 +1,20 @@
 {
-  "compileOnSave": false,
-  "compilerOptions": {
-    "allowSyntheticDefaultImports": true,
-    "target": "ES2018",
-    "module": "ES2015",
-    "moduleResolution": "node",
-    "noImplicitAny": false,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "removeComments": false,
-    "strictNullChecks": true,
-    "sourceMap": true,
-    "lib": ["ES2018", "DOM"],
-    "outDir": "lib",
-    "declaration": true
-  },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules"]
+	"compileOnSave": false,
+	"compilerOptions": {
+		"allowSyntheticDefaultImports": true,
+		"target": "ES2018",
+		"module": "CommonJS",
+		"moduleResolution": "node",
+		"noImplicitAny": false,
+		"noUnusedLocals": false,
+		"noUnusedParameters": false,
+		"removeComments": false,
+		"strictNullChecks": true,
+		"sourceMap": true,
+		"lib": ["ES2018", "DOM"],
+		"outDir": "build",
+		"declaration": true
+	},
+	"include": ["src/**/*", "test/**/*"],
+	"exclude": ["node_modules"]
 }

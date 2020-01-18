@@ -1,20 +1,23 @@
 {
-  "name": "typescript-boilerplate",
-  "version": "1.0.0",
-  "description": "boilerplate for web applications using typescript and webpack",
-  "main": "lib/index.js",
-  "scripts": {
-    "build": "rm -rf lib && tsc",
-    "watch": "rm -rf lib && tsc --watch"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {},
-  "devDependencies": {
-    "typescript": "^3.7.5"
-  },
-  "files": [
-    "lib/*"
-  ]
+	"name": "typescript-boilerplate",
+	"version": "0.0.1",
+	"description": "boilerplate for web applications using typescript and webpack",
+	"main": "build/src/index.js",
+	"scripts": {
+		"build": "tsc",
+		"watch": "tsc --watch",
+		"test": "tsc && ava build/test/**/*.js -v"
+	},
+	"keywords": [],
+	"author": "Chet Corcos <ccorcos@gmail.com>",
+	"license": "MIT",
+	"dependencies": {},
+	"devDependencies": {
+		"@types/node": "^13.1.8",
+		"ava": "^3.0.0-beta.1",
+		"typescript": "^3.7.5"
+	},
+	"files": [
+		"build/src/*"
+	]
 }
