@@ -1,7 +1,8 @@
 {
-	"name": "typescript-boilerplate",
+	"name": "typescript-library",
 	"version": "0.0.1",
-	"description": "boilerplate for web applications using typescript and webpack",
+	"description": "boilerplate for typescript libraries",
+	"repository": {"url": "https://github.com/ccorcos/typescript-library"},
 	"main": "build/src/index.js",
 	"scripts": {
 		"build": "tsc",
