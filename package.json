@@ -5,17 +5,22 @@
 	"repository": {"url": "https://github.com/ccorcos/typescript-library"},
 	"main": "build/src/index.js",
 	"scripts": {
+		"typecheck": "tsc --noEmit",
 		"build": "tsc",
+		"clean": "rm -rf build",
 		"watch": "tsc --watch",
-		"test": "tsc && ava build/test/**/*.js -v"
+		"test": "mocha -r ts-node/register './src/**/*.test.ts' './src/**/*.test.tsx' --verbose",
+		"release": "npm run clean && npm run build ** npm publish"
 	},
 	"keywords": [],
 	"author": "Chet Corcos <ccorcos@gmail.com>",
 	"license": "MIT",
 	"dependencies": {},
 	"devDependencies": {
+		"@types/mocha": "whitecolor/mocha-types",
 		"@types/node": "^17.0.21",
-		"ava": "^4.1.0",
+		"mocha": "^8.3.0",
+		"ts-node": "^9.1.1",
 		"typescript": "^4.6.2"
 	},
 	"files": [
