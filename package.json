@@ -18,10 +18,10 @@
 	"dependencies": {},
 	"devDependencies": {
 		"@types/mocha": "whitecolor/mocha-types",
-		"@types/node": "^17.0.21",
-		"mocha": "^8.3.0",
-		"ts-node": "^9.1.1",
-		"typescript": "^4.6.2"
+		"@types/node": "^17.0.42",
+		"mocha": "^10.0.0",
+		"ts-node": "^10.8.1",
+		"typescript": "^4.7.3"
 	},
 	"files": [
 		"build/src/*"
