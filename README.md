@@ -7,6 +7,6 @@ git clone git@github.com:ccorcos/typescript-library.git library
 cd library
 git remote remove origin
 
-npm version major
+npm install
 npm run release
 ```
