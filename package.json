@@ -5,13 +5,13 @@
 	"repository": {
 		"url": "https://github.com/ccorcos/typescript-library"
 	},
-	"main": "build/src/index.js",
+	"main": "index.js",
 	"scripts": {
-		"typecheck": "tsc --noEmit",
-		"build": "tsc",
 		"clean": "rm -rf build",
+		"build": "tsc",
+		"typecheck": "tsc --noEmit",
 		"test": "NODE_OPTIONS='--loader tsx' mocha './src/**/*.test.ts' './src/**/*.test.tsx' --verbose",
-		"release": "npm run clean && npm run build && npm publish"
+		"release": "./release.sh"
 	},
 	"keywords": [],
 	"author": "Chet Corcos <ccorcos@gmail.com>",
