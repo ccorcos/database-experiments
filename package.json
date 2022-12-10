@@ -2,28 +2,25 @@
 	"name": "typescript-library",
 	"version": "0.0.1",
 	"description": "boilerplate for typescript libraries",
-	"repository": {"url": "https://github.com/ccorcos/typescript-library"},
+	"repository": {
+		"url": "https://github.com/ccorcos/typescript-library"
+	},
 	"main": "build/src/index.js",
 	"scripts": {
 		"typecheck": "tsc --noEmit",
 		"build": "tsc",
 		"clean": "rm -rf build",
-		"watch": "tsc --watch",
-		"test": "mocha -r ts-node/register './src/**/*.test.ts' './src/**/*.test.tsx' --verbose",
-		"release": "npm run clean && npm run build ** npm publish"
+		"test": "NODE_OPTIONS='--loader tsx' mocha './src/**/*.test.ts' './src/**/*.test.tsx' --verbose",
+		"release": "npm run clean && npm run build && npm publish"
 	},
 	"keywords": [],
 	"author": "Chet Corcos <ccorcos@gmail.com>",
 	"license": "MIT",
-	"dependencies": {},
 	"devDependencies": {
 		"@types/mocha": "whitecolor/mocha-types",
-		"@types/node": "^17.0.42",
-		"mocha": "^10.0.0",
-		"ts-node": "^10.8.1",
-		"typescript": "^4.7.3"
-	},
-	"files": [
-		"build/src/*"
-	]
+		"@types/node": "^18.11.13",
+		"mocha": "^10.1.0",
+		"tsx": "^3.12.1",
+		"typescript": "^4.9.4"
+	}
 }
