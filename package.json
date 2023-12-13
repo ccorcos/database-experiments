@@ -1,16 +1,16 @@
 {
-	"name": "typescript-library",
-	"version": "0.0.2",
-	"description": "boilerplate for typescript libraries",
+	"name": "database-experiments",
+	"version": "0.0.1",
+	"description": "",
 	"repository": {
-		"url": "https://github.com/ccorcos/typescript-library"
+		"url": "https://github.com/ccorcos/database-experiments"
 	},
 	"main": "index.js",
 	"scripts": {
 		"clean": "rm -rf build",
 		"build": "tsc",
 		"typecheck": "tsc --noEmit",
-		"test": "mocha -r tsx './src/**/*.test.ts' './src/**/*.test.tsx' --verbose",
+		"test": "mocha -r tsx './src/**/*.test.ts' --verbose",
 		"release": "./release.sh"
 	},
 	"keywords": [],
@@ -22,5 +22,10 @@
 		"mocha": "^10.2.0",
 		"tsx": "^4.1.2",
 		"typescript": "^5.2.2"
+	},
+	"dependencies": {
+		"lexicodec": "^0.0.4",
+		"lodash": "^4.17.21",
+		"ulid": "^2.3.0"
 	}
 }
