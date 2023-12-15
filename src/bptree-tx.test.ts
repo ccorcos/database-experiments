@@ -1,7 +1,7 @@
 import { strict as assert } from "assert"
-import { cloneDeep } from "lodash"
+import { cloneDeep, isEqual, uniq } from "lodash"
 import { describe, it } from "mocha"
-import { BinaryPlusTree } from "./bptree"
+import { BinaryPlusTransactionalTree } from "./bptree-tx"
 
 // min = 2, max = 4
 const structuralTests24 = `
@@ -198,9 +198,9 @@ const structuralTests24 = `
 
 `
 
-describe("BinaryPlusTree", () => {
+describe("BinaryPlusTransactionalTree", () => {
 	describe("structural tests 2-4", () => {
-		const tree = new BinaryPlusTree(2, 4)
+		const tree = new BinaryPlusTransactionalTree(2, 4)
 		test(tree, structuralTests24)
 	})
 
@@ -214,7 +214,7 @@ describe("BinaryPlusTree", () => {
 
 	it("big tree", () => {
 		const numbers = randomNumbers(20_000)
-		const tree = new BinaryPlusTree(3, 9)
+		const tree = new BinaryPlusTransactionalTree(3, 9)
 		for (const number of numbers) {
 			tree.set(number, number * 2)
 			assert.equal(tree.get(number), number * 2)
@@ -234,15 +234,17 @@ describe("BinaryPlusTree", () => {
 		const size = args.testSize
 		const numbers = randomNumbers(size)
 
-		const tree = new BinaryPlusTree(args.minSize, args.maxSize)
+		const tree = new BinaryPlusTransactionalTree(args.minSize, args.maxSize)
 		for (let i = 0; i < size; i++) {
 			const n = numbers[i]
 			it(`Set ${i} : ${n}`, () => {
 				// it(`+ ${n}`, () => {
+
+				const oldTree = clone(tree)
 				tree.set(n, n.toString())
 				verify(tree)
+				verifyImmutable(tree, oldTree)
 
-				// Get works on every key so far.
 				for (let j = 0; j <= i; j++) {
 					const x = numbers[j]
 					assert.equal(tree.get(x), x.toString())
@@ -257,6 +259,7 @@ describe("BinaryPlusTree", () => {
 					const t = clone(tree)
 					t.set(x, x * 2)
 					verify(t)
+					verifyImmutable(tree, t)
 
 					// Check get on all keys.
 					for (let k = 0; k <= i; k++) {
@@ -282,6 +285,7 @@ describe("BinaryPlusTree", () => {
 						console.log("AFTER", inspect(t))
 						throw error
 					}
+					verifyImmutable(tree, t)
 
 					// Check get on all keys.
 					for (let k = 0; k <= i; k++) {
@@ -325,7 +329,7 @@ function parseTests(str: string) {
 	})
 }
 
-function test(tree: BinaryPlusTree, str: string) {
+function test(tree: BinaryPlusTransactionalTree, str: string) {
 	for (const test of parseTests(structuralTests24)) {
 		let label = `${test.op} ${test.n}`
 		if (test.comment) label += " // " + test.comment
@@ -347,7 +351,7 @@ type KeyTree =
 	| { keys: Key[]; children?: undefined }
 	| { keys: Key[]; children: KeyTree[] }
 
-function toKeyTree(tree: BinaryPlusTree, id = "root"): KeyTree {
+function toKeyTree(tree: BinaryPlusTransactionalTree, id = "root"): KeyTree {
 	const node = tree.nodes[id]
 	if (!node) throw new Error("Missing node!")
 
@@ -385,7 +389,7 @@ function print(x: any) {
 	return ""
 }
 
-function inspect(tree: BinaryPlusTree) {
+function inspect(tree: BinaryPlusTransactionalTree) {
 	const keyTree = toKeyTree(tree)
 	const layers = toTreeLayers(keyTree)
 	const str = layers
@@ -396,14 +400,14 @@ function inspect(tree: BinaryPlusTree) {
 	return str
 }
 
-function clone(tree: BinaryPlusTree) {
-	const cloned = new BinaryPlusTree(tree.minSize, tree.maxSize)
+function clone(tree: BinaryPlusTransactionalTree) {
+	const cloned = new BinaryPlusTransactionalTree(tree.minSize, tree.maxSize)
 	cloned.nodes = cloneDeep(tree.nodes)
 	return cloned
 }
 
 /** Check for node sizes. */
-function verify(tree: BinaryPlusTree, id = "root") {
+function verify(tree: BinaryPlusTransactionalTree, id = "root") {
 	const node = tree.nodes[id]
 	if (id === "root") {
 		if (!node) return
@@ -418,4 +422,20 @@ function verify(tree: BinaryPlusTree, id = "root") {
 
 	if (node.leaf) return
 	for (const { value } of node.values) verify(tree, value)
+}
+
+function verifyImmutable(
+	tree1: BinaryPlusTransactionalTree,
+	tree2: BinaryPlusTransactionalTree
+) {
+	const keys = uniq([...Object.keys(tree1.nodes), ...Object.keys(tree2.nodes)])
+	for (const key of keys) {
+		const node1 = tree1.nodes[key]
+		const node2 = tree2.nodes[key]
+		if (isEqual(node1, node2)) {
+			assert.ok(node1 === node2)
+		} else {
+			assert.ok(node1 !== node2)
+		}
+	}
 }

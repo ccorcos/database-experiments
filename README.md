@@ -190,6 +190,10 @@ There are a bunch of interesting trade-offs to understand here...
 
 2. You don't often see durable hashmaps. There's obviously overhead of managing memory on disk and whatnot, but the bigger thing is that reading from disk usually the most expensive part. With B+ trees that are really wide, you end up with very few disk reads, and then searching through the keys in memory is much faster than a disk read so that's bacially trivial. Thus, if you are in search of a O(1) durable key-value store, you might be surprised that they're hard to find. Just use SQLite (b+ tree) or LevelDb (log-sorted merge tree).
 
+
+TODO: -tx version with verify immutable.
+
+
 ## Interval Trees (TODO)
 
 

@@ -26,7 +26,7 @@ export type LeafNode = {
 	values: { key: Key | null; value: any }[]
 }
 
-export class BinaryPlusTree {
+export class BinaryPlusTransactionalTree {
 	// In preparation for storing nodes in a key-value database.
 	nodes: { [key: Key]: BranchNode | LeafNode | undefined } = {}
 
