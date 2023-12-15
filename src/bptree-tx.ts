@@ -117,6 +117,8 @@ export class BinaryPlusTransactionalTree {
 				const existing = insert({ key, value }, newNode.values, (x) =>
 					compare(x.key, key)
 				)
+				tx.set(newNode.id, newNode)
+
 				// No need to rebalance if we're replacing
 				if (existing) {
 					tx.commit()
