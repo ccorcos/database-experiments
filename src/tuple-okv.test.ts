@@ -1,11 +1,11 @@
 import { strict as assert } from "assert"
 import { jsonCodec } from "lexicodec"
 import { describe, it } from "mocha"
-import { TupleOrderedKeyValueDatabase } from "./tuple-okv"
+import { OrderedTupleValueDatabase } from "./tuple-okv"
 
-describe("TupleOrderedKeyValueDatabase", () => {
+describe("OrderedTupleValueDatabase", () => {
 	it("get", () => {
-		const okv = new TupleOrderedKeyValueDatabase(jsonCodec)
+		const okv = new OrderedTupleValueDatabase(jsonCodec)
 
 		let result = okv.get(["a"])
 		assert.deepEqual(result?.value, undefined)
@@ -16,7 +16,7 @@ describe("TupleOrderedKeyValueDatabase", () => {
 	})
 
 	it("list", () => {
-		const okv = new TupleOrderedKeyValueDatabase(jsonCodec)
+		const okv = new OrderedTupleValueDatabase(jsonCodec)
 
 		okv.write({
 			set: [
@@ -66,7 +66,7 @@ describe("TupleOrderedKeyValueDatabase", () => {
 	})
 
 	it("conflict", () => {
-		const okv = new TupleOrderedKeyValueDatabase(jsonCodec)
+		const okv = new OrderedTupleValueDatabase(jsonCodec)
 		okv.write({ set: [{ key: ["a"], value: 1 }] })
 
 		const a = okv.get(["a"])!
@@ -81,7 +81,7 @@ describe("TupleOrderedKeyValueDatabase", () => {
 	})
 
 	it("sum", () => {
-		const okv = new TupleOrderedKeyValueDatabase(jsonCodec)
+		const okv = new OrderedTupleValueDatabase(jsonCodec)
 		okv.write({ sum: [{ key: ["a"], value: 1 }] })
 		assert.deepEqual(okv.get(["a"])?.value, 1)
 		okv.write({ sum: [{ key: ["a"], value: 1 }] })

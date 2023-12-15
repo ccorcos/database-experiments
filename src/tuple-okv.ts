@@ -67,7 +67,7 @@ export class ConflictError extends Error {}
 
 type Tuple = any[]
 
-export class TupleOrderedKeyValueDatabase {
+export class OrderedTupleValueDatabase {
 	constructor(private codec: Codec) {}
 
 	private data: { key: Tuple; value: any; version: string }[] = []

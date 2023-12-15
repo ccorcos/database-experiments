@@ -174,6 +174,10 @@ type OrderedKeyValueDatabase = {
 
 Actual ordered key-value databases often use log-sorted merge trees. And general purpose databases like SQLite and Postgres use B+ trees to store sorted indexes.
 
+## OrderedTupleValueDatabase (tuple-okv.ts)
+
+Using the `lexicodec` library, we can encode tuples into strings. But if we aren't persisting data, we don't want to have to pay the cost of serializing just to do in-memory list queries.
+
 ## B+ Trees (bptree.ts)
 
 B+ trees are a type of self-balancing tree used for storing sorted data to disk.
