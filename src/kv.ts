@@ -3,14 +3,12 @@ import { ulid } from "ulid"
 export class ConflictError extends Error {}
 
 export class KeyValueDatabase<V = any> {
-	private map: { [key: string]: { value: V | undefined; version: string } } = {}
+	private map: { [key: string]: { value: V; version: string } } = {}
 
-	get = (
-		key: string
-	): { value: V | undefined; version: string | undefined } => {
+	get = (key: string): { value: V; version: string } | undefined => {
 		const existing = this.map[key]
 		if (existing) return existing
-		else return { value: undefined, version: undefined }
+		else return undefined
 	}
 
 	write(tx: {
