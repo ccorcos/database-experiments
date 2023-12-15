@@ -7,8 +7,6 @@ so that we can later extend it to an interval tree and a range tree.
 
 */
 
-import { KeyValueDatabase } from "./kv"
-
 type Key = string | number
 
 /**
@@ -28,23 +26,19 @@ export type LeafNode = {
 	values: { key: Key | null; value: any }[]
 }
 
-export class BinaryPlusTreeDatabase<V = any> {
+export class BinaryPlusTree {
+	// In preparation for storing nodes in a key-value database.
+	nodes: { [key: Key]: BranchNode | LeafNode | undefined } = {}
+
 	/**
 	 * minSize must be less than maxSize / 2.
 	 */
-	constructor(
-		public kv: KeyValueDatabase<LeafNode | BranchNode>,
-		public minSize: number,
-		public maxSize: number
-	) {
+	constructor(public minSize: number, public maxSize: number) {
 		if (minSize > maxSize / 2) throw new Error("Invalid tree size.")
 	}
 
-	// TODO: underlying storage concurrency checks when async.
-	get = (key: Key): V | undefined => {
-		const tx = new KeyValueTransaction(this.kv)
-
-		const root = tx.get("root")
+	get = (key: Key): any | undefined => {
+		const root = this.nodes["root"]
 		if (!root) return // Empty tree
 
 		let node = root
@@ -60,7 +54,7 @@ export class BinaryPlusTreeDatabase<V = any> {
 			// If we find the key in a branch node, recur into that child.
 			if (result.found !== undefined) {
 				const childId = node.values[result.found].value
-				const child = tx.get(childId)
+				const child = this.nodes[childId]
 				if (!child) throw Error("Missing child node.")
 				node = child
 				continue
@@ -71,46 +65,37 @@ export class BinaryPlusTreeDatabase<V = any> {
 			if (result.closest === 0) throw new Error("Broken.")
 			// And we should recurd into the `closest-1` child
 			const childId = node.values[result.closest - 1].value
-			const child = tx.get(childId)
+			const child = this.nodes[childId]
 			if (!child) throw Error("Missing child node.")
 			node = child
 		}
 	}
 
 	set = (key: Key, value: any) => {
-		const tx = new KeyValueTransaction(this.kv)
-		const root = tx.get("root")
+		const root = this.nodes["root"]
 
 		// Intitalize root node.
 		if (!root) {
-			tx.set("root", {
+			this.nodes["root"] = {
 				leaf: true,
 				id: "root",
 				values: [{ key, value }],
-			})
-			tx.commit()
+			}
 			return
 		}
 
 		// Insert into leaf node.
-		const nodePath = ["root"]
+		const nodePath = [root]
 		const indexPath: number[] = []
 		while (true) {
-			const nodeId = nodePath[0]
-			const node = tx.get(nodeId)
-			if (!node) throw new Error("Missing node.")
+			const node = nodePath[0]
 
 			if (node.leaf) {
-				const newNode = { ...node, values: [...node.values] }
-				const existing = insert({ key, value }, newNode.values, (x) =>
+				const existing = insert({ key, value }, node.values, (x) =>
 					compare(x.key, key)
 				)
-				tx.set(newNode.id, newNode)
 				// No need to rebalance if we're replacing
-				if (existing) {
-					tx.commit()
-					return
-				}
+				if (existing) return
 				break
 			}
 
@@ -118,18 +103,16 @@ export class BinaryPlusTreeDatabase<V = any> {
 			const index =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.values[index].value
-
+			const child = this.nodes[childId]
+			if (!child) throw Error("Missing child node.")
 			// Recur into child.
-			nodePath.unshift(childId)
+			nodePath.unshift(child)
 			indexPath.unshift(index)
 		}
 
 		// Balance the tree by splitting nodes, starting from the leaf.
-		let nodeId = nodePath.shift()
-		while (nodeId) {
-			const node = tx.get(nodeId)
-			if (!node) throw new Error("Missing node.")
-
+		let node = nodePath.shift()
+		while (node) {
 			const size = node.values.length
 			if (size <= this.maxSize) break
 
@@ -139,7 +122,7 @@ export class BinaryPlusTreeDatabase<V = any> {
 				leaf: node.leaf,
 				values: node.values.splice(splitIndex),
 			}
-			tx.set(rightNode.id, rightNode)
+			this.nodes[rightNode.id] = rightNode
 			const rightMinKey = rightNode.values[0].key
 
 			// If we're splitting the root node.
@@ -149,63 +132,46 @@ export class BinaryPlusTreeDatabase<V = any> {
 					leaf: node.leaf,
 					values: node.values,
 				}
-				tx.set(leftNode.id, leftNode)
+				this.nodes[leftNode.id] = leftNode
 
-				tx.set("root", {
+				this.nodes["root"] = {
 					id: "root",
 					values: [
 						{ key: null, value: leftNode.id },
 						{ key: rightMinKey, value: rightNode.id },
 					],
-				})
+				}
 				break
 			}
 
 			// Insert right node into parent.
-			const parentId = nodePath.shift()
-			if (!parentId) throw new Error("Broken.")
-			const parent = tx.get(parentId)
-			if (!parent) throw new Error("Broken.")
+			const parent = nodePath.shift()
 			const parentIndex = indexPath.shift()
+			if (!parent) throw new Error("Broken.")
 			if (parentIndex === undefined) throw new Error("Broken.")
-
-			const newParent = {
-				...parent,
-				values: [...parent.values],
-			}
-			newParent.values.splice(parentIndex + 1, 0, {
+			parent.values.splice(parentIndex + 1, 0, {
 				key: rightMinKey,
 				value: rightNode.id,
 			})
-			tx.set(newParent.id, newParent)
 
 			// Recur
-			nodeId = parent.id
+			node = parent
 		}
-
-		tx.commit()
 	}
 
 	delete = (key: Key) => {
-		const tx = new KeyValueTransaction(this.kv)
-		const root = tx.get("root")
+		const root = this.nodes["root"]
 		if (!root) return
 
 		// Delete from leaf node.
-		const nodePath = ["root"]
+		const nodePath = [root]
 		const indexPath: number[] = []
 		while (true) {
-			const node = tx.get(nodePath[0])
-			if (!node) throw new Error("Missing node.")
+			const node = nodePath[0]
 
 			if (node.leaf) {
-				const newNode = { ...node, values: [...node.values] }
-				const exists = remove(newNode.values, (x) => compare(x.key, key))
-				tx.set(newNode.id, newNode)
-				if (!exists) {
-					tx.commit()
-					return
-				}
+				const exists = remove(node.values, (x) => compare(x.key, key))
+				if (!exists) return
 				break
 			}
 
@@ -213,8 +179,10 @@ export class BinaryPlusTreeDatabase<V = any> {
 			const index =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.values[index].value
+			const child = this.nodes[childId]
+			if (!child) throw Error("Missing child node.")
 			// Recur into the child.
-			nodePath.unshift(childId)
+			nodePath.unshift(child)
 			indexPath.unshift(index)
 		}
 
@@ -253,115 +221,71 @@ export class BinaryPlusTreeDatabase<V = any> {
 
 		*/
 
-		let nodeId = nodePath.shift()
-		while (nodeId) {
-			const node = tx.get(nodeId)
-			if (!node) throw new Error("Missing node.")
-
+		let node = nodePath.shift()
+		while (node) {
 			if (node.id === "root") {
 				// A root leaf node has no minSize constaint.
-				if (node.leaf) {
-					tx.commit()
-					return
-				}
+				if (node.leaf) return
 
 				// If node with only one child becomes its child.
 				if (node.values.length === 1) {
-					const newRoot = tx.get(node.values[0].value)
+					const newRoot = this.nodes[node.values[0].value]
 					if (!newRoot) throw new Error("Broken.")
-					tx.set("root", { ...newRoot, id: "root" })
+					this.nodes["root"] = { ...newRoot, id: "root" }
 				}
-				tx.commit()
 				return
 			}
 
-			const parentId = nodePath.shift()
-			if (!parentId) throw new Error("Broken.")
-			const parent = tx.get(parentId)
-			if (!parent) throw new Error("Broken.")
+			const parent = nodePath.shift()
 			const parentIndex = indexPath.shift()
+			if (!parent) throw new Error("Broken.")
 			if (parentIndex === undefined) throw new Error("Broken.")
 
 			if (node.values.length >= this.minSize) {
 				// No need to merge but we might need to update the minKey in the parent
 				const parentItem = parent.values[parentIndex]
 				// No need to recusively update the left-most branch.
-				if (parentItem.key === null) {
-					tx.commit()
-					return
-				}
+				if (parentItem.key === null) return
 				// No need to recursively update if the minKey didn't change.
-				if (parentItem.key === node.values[0].key) {
-					tx.commit()
-					return
-				}
+				if (parentItem.key === node.values[0].key) return
 				// Set the minKey and recur
-				const newParent = { ...parent, values: [...parent.values] }
-				newParent[parentIndex] = {
-					key: node.values[0].key,
-					value: node.id,
-				}
-				tx.set(newParent.id, newParent)
-
-				nodeId = parent.id
+				parentItem.key = node.values[0].key
+				node = parent
 				continue
 			}
 
 			// Merge or redistribute
 			if (parentIndex === 0) {
-				const rightSibling = tx.get(parent.values[parentIndex + 1].value)
+				const rightSibling = this.nodes[parent.values[parentIndex + 1].value]
 				if (!rightSibling) throw new Error("Broken.")
 
 				const combinedSize = node.values.length + rightSibling.values.length
 				if (combinedSize > this.maxSize) {
 					// Redistribute
 					const splitIndex = Math.round(combinedSize / 2) - node.values.length
-
-					const newRight = { ...rightSibling, values: [...rightSibling.values] }
-					const moveLeft = newRight.values.splice(0, splitIndex)
-					tx.set(newRight.id, newRight)
-
-					const newNode = { ...node, values: [...node.values] }
-					newNode.values.push(...moveLeft)
-					tx.set(newNode.id, newNode)
+					const moveLeft = rightSibling.values.splice(0, splitIndex)
+					node.values.push(...moveLeft)
 
 					// Update parent keys.
-					const newParent = { ...parent, values: [...parent.values] }
 					if (parent.values[parentIndex].key !== null) {
-						newParent.values[parentIndex] = {
-							key: newNode.values[0].key,
-							value: newNode.id,
-						}
+						parent.values[parentIndex].key = node.values[0].key
 					}
-					newParent.values[parentIndex + 1] = {
-						key: newRight.values[0].key,
-						value: newRight.id,
-					}
-					tx.set(newParent.id, newParent)
+					parent.values[parentIndex + 1].key = rightSibling.values[0].key
 				} else {
 					// Merge
-					const newRight = { ...rightSibling, values: [...rightSibling.values] }
-					newRight.values.unshift(...node.values)
-					tx.set(newRight.id, newRight)
+					rightSibling.values.unshift(...node.values)
 
-					const newParent = { ...parent, values: [...parent.values] }
 					// Remove the old pointer to rightSibling
-					newParent.values.splice(1, 1)
+					parent.values.splice(1, 1)
 
 					// Replace the node pointer with the new rightSibling
 					const leftMost = parent.values[0].key === null
-					newParent.values[0] = {
-						key: leftMost ? null : newRight.values[0].key,
-						value: newRight.id,
+					parent.values[0] = {
+						key: leftMost ? null : rightSibling.values[0].key,
+						value: rightSibling.id,
 					}
-					tx.set(newParent.id, newParent)
 				}
 			} else {
-				//
-				//
-				// HERE
-				//
-				//
 				const leftSibling = this.nodes[parent.values[parentIndex - 1].value]
 				if (!leftSibling) throw new Error("Broken.")
 
@@ -471,47 +395,4 @@ function remove<T>(list: T[], compare: (a: T) => -1 | 0 | 1) {
 
 function randomId() {
 	return Math.random().toString(36).slice(2, 10)
-}
-
-export class KeyValueTransaction<V = any> {
-	cache: { [key: string]: V | undefined } = {}
-	checks: { [key: string]: string | undefined } = {}
-	sets: { [key: string]: V } = {}
-	deletes = new Set<string>()
-
-	constructor(public kv: KeyValueDatabase<V>) {}
-
-	get = (key: string): V | undefined => {
-		if (key in this.cache) return this.cache[key]
-		const result = this.kv.get(key)
-		this.checks[key] = result.version
-		this.cache[key] = result.value
-		return result.value
-	}
-
-	set(key: string, value: V) {
-		this.sets[key] = value
-		this.cache[key] = value
-		this.deletes.delete(key)
-	}
-
-	delete(key: string) {
-		this.cache[key] = undefined
-		delete this.sets[key]
-		this.deletes.add(key)
-	}
-
-	commit() {
-		this.kv.write({
-			check: Object.entries(this.checks).map(([key, version]) => ({
-				key,
-				version,
-			})),
-			set: Object.entries(this.sets).map(([key, value]) => ({
-				key,
-				value,
-			})),
-			delete: Array.from(this.deletes),
-		})
-	}
 }
