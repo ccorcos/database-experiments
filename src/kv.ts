@@ -3,7 +3,7 @@ import { ulid } from "ulid"
 export class ConflictError extends Error {}
 
 export class KeyValueDatabase<V = any> {
-	private map: { [key: string]: { value: V; version: string } } = {}
+	map: { [key: string]: { value: V; version: string } } = {}
 
 	get = (key: string): { value: V; version: string } | undefined => {
 		const existing = this.map[key]

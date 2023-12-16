@@ -1,7 +1,8 @@
 import { strict as assert } from "assert"
 import { cloneDeep, isEqual, uniq } from "lodash"
 import { describe, it } from "mocha"
-import { BinaryPlusTransactionalTree } from "./bptree-tx"
+import { BinaryPlusKeyValueDatabase } from "./bptree-kv"
+import { KeyValueDatabase } from "./kv"
 
 // min = 2, max = 4
 const structuralTests24 = `
@@ -198,9 +199,10 @@ const structuralTests24 = `
 
 `
 
-describe("BinaryPlusTransactionalTree", () => {
+describe("BinaryPlusKeyValueDatabase", () => {
 	describe("structural tests 2-4", () => {
-		const tree = new BinaryPlusTransactionalTree(2, 4)
+		const kv = new KeyValueDatabase()
+		const tree = new BinaryPlusKeyValueDatabase(kv, 2, 4)
 		test(tree, structuralTests24)
 	})
 
@@ -214,7 +216,8 @@ describe("BinaryPlusTransactionalTree", () => {
 
 	it("big tree", () => {
 		const numbers = randomNumbers(20_000)
-		const tree = new BinaryPlusTransactionalTree(3, 9)
+		const kv = new KeyValueDatabase()
+		const tree = new BinaryPlusKeyValueDatabase(kv, 3, 9)
 		for (const number of numbers) {
 			tree.set(number, number * 2)
 			assert.equal(tree.get(number), number * 2)
@@ -233,7 +236,8 @@ describe("BinaryPlusTransactionalTree", () => {
 	}) {
 		const numbers = randomNumbers(args.testSize)
 
-		const tree = new BinaryPlusTransactionalTree(args.minSize, args.maxSize)
+		const kv = new KeyValueDatabase()
+		const tree = new BinaryPlusKeyValueDatabase(kv, args.minSize, args.maxSize)
 		for (let i = 0; i < numbers.length; i++) {
 			const n = numbers[i]
 			it(`Set ${i} : ${n}`, () => {
@@ -257,7 +261,7 @@ describe("BinaryPlusTransactionalTree", () => {
 					// it(`Overwrite ${j}: ${x}`, () => {
 					const t = clone(tree)
 
-					verifyImmutable(t, () => {
+					verifyImmutable(tree, () => {
 						t.set(x, x * 2)
 						verify(t)
 					})
@@ -277,7 +281,7 @@ describe("BinaryPlusTransactionalTree", () => {
 
 					// it(`Delete ${j} : ${x}`, () => {
 					const t = clone(tree)
-					verifyImmutable(t, () => {
+					verifyImmutable(tree, () => {
 						t.delete(x)
 						verify(t)
 					})
@@ -324,7 +328,7 @@ function parseTests(str: string) {
 	})
 }
 
-function test(tree: BinaryPlusTransactionalTree, str: string) {
+function test(tree: BinaryPlusKeyValueDatabase, str: string) {
 	for (const test of parseTests(structuralTests24)) {
 		let label = `${test.op} ${test.n}`
 		if (test.comment) label += " // " + test.comment
@@ -346,8 +350,8 @@ type KeyTree =
 	| { keys: Key[]; children?: undefined }
 	| { keys: Key[]; children: KeyTree[] }
 
-function toKeyTree(tree: BinaryPlusTransactionalTree, id = "root"): KeyTree {
-	const node = tree.nodes[id]
+function toKeyTree(tree: BinaryPlusKeyValueDatabase, id = "root"): KeyTree {
+	const node = tree.kv.get(id)?.value
 	if (!node) {
 		console.warn("Missing node!")
 		// throw new Error("Missing node!")
@@ -388,7 +392,7 @@ function print(x: any) {
 	return ""
 }
 
-function inspect(tree: BinaryPlusTransactionalTree) {
+function inspect(tree: BinaryPlusKeyValueDatabase) {
 	const keyTree = toKeyTree(tree)
 	const layers = toTreeLayers(keyTree)
 	const str = layers
@@ -399,21 +403,23 @@ function inspect(tree: BinaryPlusTransactionalTree) {
 	return str
 }
 
-function clone(tree: BinaryPlusTransactionalTree) {
-	const cloned = new BinaryPlusTransactionalTree(tree.minSize, tree.maxSize)
-	cloned.nodes = cloneDeep(tree.nodes)
+function clone(tree: BinaryPlusKeyValueDatabase) {
+	const kv = new KeyValueDatabase()
+	kv.map = cloneDeep(tree.kv.map)
+	const cloned = new BinaryPlusKeyValueDatabase(kv, tree.minSize, tree.maxSize)
 	return cloned
 }
 
-function shallowClone(tree: BinaryPlusTransactionalTree) {
-	const cloned = new BinaryPlusTransactionalTree(tree.minSize, tree.maxSize)
-	cloned.nodes = { ...tree.nodes }
+function shallowClone(tree: BinaryPlusKeyValueDatabase) {
+	const kv = new KeyValueDatabase()
+	kv.map = { ...tree.kv.map }
+	const cloned = new BinaryPlusKeyValueDatabase(kv, tree.minSize, tree.maxSize)
 	return cloned
 }
 
 /** Check for node sizes. */
-function verify(tree: BinaryPlusTransactionalTree, id = "root") {
-	const node = tree.nodes[id]
+function verify(tree: BinaryPlusKeyValueDatabase, id = "root") {
+	const node = tree.kv.get(id)?.value
 	if (id === "root") {
 		if (!node) return
 		if (node.leaf) return
@@ -429,17 +435,17 @@ function verify(tree: BinaryPlusTransactionalTree, id = "root") {
 	for (const { value } of node.values) verify(tree, value)
 }
 
-function verifyImmutable(tree: BinaryPlusTransactionalTree, fn: () => void) {
+function verifyImmutable(tree: BinaryPlusKeyValueDatabase, fn: () => void) {
 	const shallow = shallowClone(tree)
 	const deep = clone(tree)
 
 	fn()
 
-	const keys = uniq([...Object.keys(tree.nodes), ...Object.keys(shallow.nodes)])
+	const keys = uniq([...Object.keys(tree.kv.map), ...Object.keys(shallow)])
 	for (const key of keys) {
-		const newNode = tree.nodes[key]
-		const originalValue = deep.nodes[key]
-		const originalRef = shallow.nodes[key]
+		const newNode = tree.kv.get(key)
+		const originalValue = deep.kv.get(key)
+		const originalRef = shallow.kv.get(key)
 
 		if (isEqual(newNode, originalValue)) {
 			assert.ok(
