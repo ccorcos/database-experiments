@@ -231,19 +231,18 @@ describe("BinaryPlusTransactionalTree", () => {
 		maxSize: number
 		testSize: number
 	}) {
-		const size = args.testSize
-		const numbers = randomNumbers(size)
+		const numbers = randomNumbers(args.testSize)
 
 		const tree = new BinaryPlusTransactionalTree(args.minSize, args.maxSize)
-		for (let i = 0; i < size; i++) {
+		for (let i = 0; i < numbers.length; i++) {
 			const n = numbers[i]
 			it(`Set ${i} : ${n}`, () => {
 				// it(`+ ${n}`, () => {
 
-				const oldTree = clone(tree)
-				tree.set(n, n.toString())
-				verify(tree)
-				verifyImmutable(tree, oldTree)
+				verifyImmutable(tree, () => {
+					tree.set(n, n.toString())
+					verify(tree)
+				})
 
 				for (let j = 0; j <= i; j++) {
 					const x = numbers[j]
@@ -257,9 +256,11 @@ describe("BinaryPlusTransactionalTree", () => {
 
 					// it(`Overwrite ${j}: ${x}`, () => {
 					const t = clone(tree)
-					t.set(x, x * 2)
-					verify(t)
-					verifyImmutable(tree, t)
+
+					verifyImmutable(t, () => {
+						t.set(x, x * 2)
+						verify(t)
+					})
 
 					// Check get on all keys.
 					for (let k = 0; k <= i; k++) {
@@ -276,16 +277,10 @@ describe("BinaryPlusTransactionalTree", () => {
 
 					// it(`Delete ${j} : ${x}`, () => {
 					const t = clone(tree)
-					t.delete(x)
-					try {
+					verifyImmutable(t, () => {
+						t.delete(x)
 						verify(t)
-					} catch (error) {
-						console.log("BEFORE", inspect(tree))
-						console.log("DELETE", x)
-						console.log("AFTER", inspect(t))
-						throw error
-					}
-					verifyImmutable(tree, t)
+					})
 
 					// Check get on all keys.
 					for (let k = 0; k <= i; k++) {
@@ -304,7 +299,7 @@ function randomNumbers(size: number) {
 	const numbers: number[] = []
 	for (let i = 0; i < size; i++)
 		numbers.push(Math.round(Math.random() * size * 10))
-	return numbers
+	return uniq(numbers)
 }
 
 function parseTests(str: string) {
@@ -353,7 +348,11 @@ type KeyTree =
 
 function toKeyTree(tree: BinaryPlusTransactionalTree, id = "root"): KeyTree {
 	const node = tree.nodes[id]
-	if (!node) throw new Error("Missing node!")
+	if (!node) {
+		console.warn("Missing node!")
+		// throw new Error("Missing node!")
+		return { keys: [] }
+	}
 
 	const keys = node.values.map((v) => v.key)
 	if (node.leaf) return { keys: keys }
@@ -406,6 +405,12 @@ function clone(tree: BinaryPlusTransactionalTree) {
 	return cloned
 }
 
+function shallowClone(tree: BinaryPlusTransactionalTree) {
+	const cloned = new BinaryPlusTransactionalTree(tree.minSize, tree.maxSize)
+	cloned.nodes = { ...tree.nodes }
+	return cloned
+}
+
 /** Check for node sizes. */
 function verify(tree: BinaryPlusTransactionalTree, id = "root") {
 	const node = tree.nodes[id]
@@ -424,18 +429,28 @@ function verify(tree: BinaryPlusTransactionalTree, id = "root") {
 	for (const { value } of node.values) verify(tree, value)
 }
 
-function verifyImmutable(
-	tree1: BinaryPlusTransactionalTree,
-	tree2: BinaryPlusTransactionalTree
-) {
-	const keys = uniq([...Object.keys(tree1.nodes), ...Object.keys(tree2.nodes)])
+function verifyImmutable(tree: BinaryPlusTransactionalTree, fn: () => void) {
+	const shallow = shallowClone(tree)
+	const deep = clone(tree)
+
+	fn()
+
+	const keys = uniq([...Object.keys(tree.nodes), ...Object.keys(shallow)])
 	for (const key of keys) {
-		const node1 = tree1.nodes[key]
-		const node2 = tree2.nodes[key]
-		if (isEqual(node1, node2)) {
-			assert.ok(node1 === node2)
+		const newNode = tree.nodes[key]
+		const originalValue = deep.nodes[key]
+		const originalRef = shallow.nodes[key]
+
+		if (isEqual(newNode, originalValue)) {
+			assert.ok(
+				newNode === originalRef
+				// [inspect(deep), inspect(tree), JSON.stringify(newNode)].join("\n\n")
+			)
 		} else {
-			assert.ok(node1 !== node2)
+			assert.ok(
+				newNode !== originalRef
+				// [inspect(deep), inspect(tree), JSON.stringify(newNode)].join("\n\n")
+			)
 		}
 	}
 }

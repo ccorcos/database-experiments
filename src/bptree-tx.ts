@@ -224,6 +224,7 @@ export class BinaryPlusTransactionalTree {
 			if (node.leaf) {
 				const newNode = { ...node, values: [...node.values] }
 				const exists = remove(newNode.values, (x) => compare(x.key, key))
+				tx.set(newNode.id, newNode)
 				if (!exists) {
 					tx.commit()
 					return
@@ -372,7 +373,7 @@ export class BinaryPlusTransactionalTree {
 					if (parent.values[parentIndex].key !== null) {
 						newParent.values[parentIndex] = {
 							key: newNode.values[0].key,
-							value: newParent[parentIndex].value,
+							value: newParent.values[parentIndex].value,
 						}
 					}
 
@@ -432,7 +433,7 @@ export class BinaryPlusTransactionalTree {
 				const newParent = { ...parent, values: [...parent.values] }
 				newParent.values[parentIndex] = {
 					key: newNode.values[0].key,
-					value: newParent.values[parentIndex],
+					value: newParent.values[parentIndex].value,
 				}
 				tx.set(newLeft.id, newLeft)
 				tx.set(newNode.id, newNode)
