@@ -190,6 +190,7 @@ There are a bunch of interesting trade-offs to understand here...
 
 2. You don't often see durable hashmaps. There's obviously overhead of managing memory on disk and whatnot, but the bigger thing is that reading from disk usually the most expensive part. With B+ trees that are really wide, you end up with very few disk reads, and then searching through the keys in memory is much faster than a disk read so that's bacially trivial. Thus, if you are in search of a O(1) durable key-value store, you might be surprised that they're hard to find. Just use SQLite (b+ tree) or LevelDb (log-sorted merge tree).
 
+The whole point of building a B+ tree is because I want to build an Interval tree to do reactivity efficiently.
 
 ## Immutable B+ Tree (bptree-tx.ts)
 
@@ -197,9 +198,15 @@ This version of a B+ tree makes sure that all mutations to the tree are immutabl
 
 Crucially, we added a `verifyImmutable` function to the tests to verify that we aren't mutably modifying anything. This sets us up well to use a proper key-value database for storage.
 
+## B+ Tree with KeyValueDatabase (bptree-kv.ts)
 
-## Interval Trees (TODO)
+Now we've officially swapped out for the KeyValueDatabase. This is a bit slower for the tests because of the read-consistency checks.
 
 
-- Interval tree for efficient reactivity.
-- ChetStack with versionstamps?
+TODO:
+- transaction for writing to the tree in batch.
+- test that concurrency checks actually work.
+- implement list functionality.
+- think about locks vs conflict retry trade-off
+
+- expand implementation to interval trees.
