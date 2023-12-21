@@ -209,12 +209,8 @@ I'm not sure I like how concurrency stuff works here though. I can imagine a wor
 ## B+ Tree with Locks (bptree-lock.ts)
 
 
-
-
-
-
-
-TODO:
+TODO
+- use ordered-array all over the place here.
 - b+tree with locks
 - test that concurrency checks actually work.
 - implement list functionality.

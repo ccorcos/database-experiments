@@ -11,7 +11,8 @@
 		"build": "tsc",
 		"typecheck": "tsc --noEmit",
 		"test": "mocha -r tsx './src/**/*.test.ts' --verbose",
-		"release": "./release.sh"
+		"release": "./release.sh",
+		"postinstall": "npm link /Users/chet/Code/external/lock"
 	},
 	"keywords": [],
 	"author": "Chet Corcos <ccorcos@gmail.com>",
@@ -25,6 +26,7 @@
 		"typescript": "^5.2.2"
 	},
 	"dependencies": {
+		"@ccorcos/ordered-array": "^0.0.1",
 		"@rocicorp/lock": "ccorcos/lock",
 		"lexicodec": "^0.0.4",
 		"lodash": "^4.17.21",

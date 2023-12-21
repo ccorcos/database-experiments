@@ -7,6 +7,7 @@ so that we can later extend it to an interval tree and a range tree.
 
 */
 
+import { orderedArray } from "@ccorcos/ordered-array"
 import { KeyValueDatabase } from "./kv"
 
 type Key = string | number
@@ -27,6 +28,10 @@ export type LeafNode = {
 	id: string
 	values: { key: Key | null; value: any }[]
 }
+
+const { search, insert, remove } = orderedArray(
+	(item: { key: Key | null; value: string }) => item.key
+)
 
 export class BinaryPlusKeyValueDatabase {
 	/**
@@ -53,7 +58,7 @@ export class BinaryPlusKeyValueDatabase {
 		let node = root
 		while (true) {
 			if (node.leaf) {
-				const result = binarySearch(node.values, (x) => compare(x.key, key))
+				const result = search(node.values, key)
 				if (result.found === undefined) {
 					if (node.id !== "root") tx.check()
 					return
@@ -62,7 +67,7 @@ export class BinaryPlusKeyValueDatabase {
 				return node.values[result.found].value
 			}
 
-			const result = binarySearch(node.values, (x) => compare(x.key, key))
+			const result = search(node.values, key)
 
 			// If we find the key in a branch node, recur into that child.
 			if (result.found !== undefined) {
@@ -117,9 +122,7 @@ export class BinaryPlusKeyValueDatabase {
 
 			if (node.leaf) {
 				const newNode = { ...node, values: [...node.values] }
-				const existing = insert({ key, value }, newNode.values, (x) =>
-					compare(x.key, key)
-				)
+				const existing = insert(newNode.values, { key, value })
 				tx.set(newNode.id, newNode)
 
 				// No need to rebalance if we're replacing
@@ -133,7 +136,7 @@ export class BinaryPlusKeyValueDatabase {
 				break
 			}
 
-			const result = binarySearch(node.values, (x) => compare(x.key, key))
+			const result = search(node.values, key)
 			const index =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.values[index].value
@@ -226,7 +229,7 @@ export class BinaryPlusKeyValueDatabase {
 
 			if (node.leaf) {
 				const newNode = { ...node, values: [...node.values] }
-				const exists = remove(newNode.values, (x) => compare(x.key, key))
+				const exists = remove(newNode.values, key)
 				tx.set(newNode.id, newNode)
 				if (!exists) {
 					tx.commit()
@@ -237,7 +240,7 @@ export class BinaryPlusKeyValueDatabase {
 				break
 			}
 
-			const result = binarySearch(node.values, (x) => compare(x.key, key))
+			const result = search(node.values, key)
 			const index =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.values[index].value
@@ -482,69 +485,6 @@ export class BinaryPlusKeyValueDatabase {
 		}
 		tx.check()
 		return depth
-	}
-}
-
-type BinarySearchResult =
-	| { found: number; closest?: undefined }
-	| { found?: undefined; closest: number }
-
-function binarySearch<T>(
-	list: Array<T>,
-	compare: (a: T) => -1 | 0 | 1
-): BinarySearchResult {
-	var min = 0
-	var max = list.length - 1
-	while (min <= max) {
-		var k = (max + min) >> 1
-		var dir = compare(list[k]) * -1
-		if (dir > 0) {
-			min = k + 1
-		} else if (dir < 0) {
-			max = k - 1
-		} else {
-			return { found: k }
-		}
-	}
-	return { closest: min }
-}
-
-function compare(
-	a: string | number | null,
-	b: string | number | null
-): -1 | 0 | 1 {
-	if (a === b) return 0
-	if (a === null) return -1
-	if (b === null) return 1
-	if (a > b) {
-		return 1
-	}
-	if (a < b) {
-		return -1
-	}
-	return 0
-}
-
-function insert<T>(
-	value: T,
-	list: Array<T>,
-	compare: (a: T, b: T) => -1 | 0 | 1
-) {
-	const result = binarySearch(list, (item) => compare(item, value))
-	if (result.found !== undefined) {
-		// Replace the whole item.
-		return list.splice(result.found, 1, value)[0]
-	} else {
-		// Insert at missing index.
-		list.splice(result.closest, 0, value)
-	}
-}
-
-function remove<T>(list: T[], compare: (a: T) => -1 | 0 | 1) {
-	let { found } = binarySearch(list, compare)
-	if (found !== undefined) {
-		// Remove from index.
-		return list.splice(found, 1)[0]
 	}
 }
 

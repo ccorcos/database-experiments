@@ -1,81 +1,20 @@
+import { orderedArray } from "@ccorcos/ordered-array"
 import { Codec } from "lexicodec"
 import { ulid } from "ulid"
 
-type BinarySearchResult =
-	| { found: number; closest?: undefined }
-	| { found?: undefined; closest: number }
-
-function binarySearch<T>(
-	list: Array<T>,
-	compare: (a: T) => -1 | 0 | 1
-): BinarySearchResult {
-	var min = 0
-	var max = list.length - 1
-	while (min <= max) {
-		var k = (max + min) >> 1
-		var dir = compare(list[k]) * -1
-		if (dir > 0) {
-			min = k + 1
-		} else if (dir < 0) {
-			max = k - 1
-		} else {
-			return { found: k }
-		}
-	}
-	return { closest: min }
-}
-
-function insert<T>(
-	value: T,
-	list: Array<T>,
-	compare: (a: T, b: T) => -1 | 0 | 1
-) {
-	const result = binarySearch(list, (item) => compare(item, value))
-	if (result.found !== undefined) {
-		// Replace the whole item.
-		list.splice(result.found, 1, value)
-	} else {
-		// Insert at missing index.
-		list.splice(result.closest, 0, value)
-	}
-}
-
-function replace<T>(
-	list: Array<T>,
-	compare: (a: T) => -1 | 0 | 1,
-	update: (existing?: T) => T
-) {
-	const result = binarySearch(list, compare)
-	if (result.found !== undefined) {
-		// Replace the whole item.
-		list.splice(result.found, 1, update(list[result.found]))
-	} else {
-		// Insert at missing index.
-		list.splice(result.closest, 0, update())
-	}
-}
-
-function remove<T>(list: T[], compare: (a: T) => -1 | 0 | 1) {
-	let { found } = binarySearch(list, compare)
-	if (found !== undefined) {
-		// Remove from index.
-		return list.splice(found, 1)[0]
-	}
-}
+type Tuple = any[]
+type Item = { key: Tuple; value: any; version: string }
 
 export class ConflictError extends Error {}
 
-type Tuple = any[]
-
 export class OrderedTupleValueDatabase {
 	constructor(private codec: Codec) {}
+	private utils = orderedArray((item: Item) => item.key, this.codec.compare)
 
 	private data: { key: Tuple; value: any; version: string }[] = []
 
 	get = (key: Tuple): { value: any; version: string } | undefined => {
-		const result = binarySearch(this.data, (a) =>
-			this.codec.compare(a.key, key)
-		)
+		const result = this.utils.search(this.data, key)
 		if (result.found === undefined) return
 		const { value, version } = this.data[result.found]
 		return { value, version }
@@ -113,9 +52,7 @@ export class OrderedTupleValueDatabase {
 
 		if (startKey) {
 			const _start = startKey
-			const result = binarySearch(this.data, (a) =>
-				this.codec.compare(a.key, _start)
-			)
+			const result = this.utils.search(this.data, _start)
 			if (result.found === undefined) {
 				startIndex = result.closest
 			} else if (startKey === args.prefix) {
@@ -127,9 +64,7 @@ export class OrderedTupleValueDatabase {
 
 		if (endKey) {
 			const _end = endKey
-			const result = binarySearch(this.data, (a) =>
-				this.codec.compare(a.key, _end)
-			)
+			const result = this.utils.search(this.data, _end)
 			if (result.found === undefined) {
 				endIndex = result.closest
 			} else {
@@ -168,16 +103,14 @@ export class OrderedTupleValueDatabase {
 		const version = ulid()
 
 		for (const { key, value } of tx.set || [])
-			insert({ key, value, version }, this.data, (a, b) =>
-				this.codec.compare(a.key, b.key)
-			)
+			this.utils.insert(this.data, { key, value, version })
 
-		const replaceValue = (key: Tuple, update: (existing?: any) => any) =>
-			replace(
-				this.data,
-				(a) => this.codec.compare(a.key, key),
-				(result) => ({ key, version, value: update(result?.value) })
-			)
+		const replaceValue = (key: Tuple, fn: (existing?: any) => any) =>
+			this.utils.update(this.data, key, (item) => ({
+				key,
+				version,
+				value: fn(item?.value),
+			}))
 
 		for (const { key, value } of tx.sum || [])
 			replaceValue(key, (existing) => {
@@ -201,7 +134,6 @@ export class OrderedTupleValueDatabase {
 				return value
 			})
 
-		for (const key of tx.delete || [])
-			remove(this.data, (a) => this.codec.compare(a.key, key))
+		for (const key of tx.delete || []) this.utils.remove(this.data, key)
 	}
 }
