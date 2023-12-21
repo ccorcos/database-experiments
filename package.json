@@ -17,6 +17,7 @@
 	"author": "Chet Corcos <ccorcos@gmail.com>",
 	"license": "MIT",
 	"devDependencies": {
+		"@ccorcos/test-clock": "^0.0.1",
 		"@types/mocha": "whitecolor/mocha-types",
 		"@types/node": "^20.9.1",
 		"mocha": "^10.2.0",
@@ -24,6 +25,7 @@
 		"typescript": "^5.2.2"
 	},
 	"dependencies": {
+		"@rocicorp/lock": "ccorcos/lock",
 		"lexicodec": "^0.0.4",
 		"lodash": "^4.17.21",
 		"ulid": "^2.3.0"

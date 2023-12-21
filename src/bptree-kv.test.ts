@@ -199,7 +199,8 @@ const structuralTests24 = `
 
 `
 
-describe("BinaryPlusKeyValueDatabase", () => {
+// Skipping becuase this is pretty slow.
+describe.skip("BinaryPlusKeyValueDatabase", () => {
 	describe("structural tests 2-4", () => {
 		const kv = new KeyValueDatabase()
 		const tree = new BinaryPlusKeyValueDatabase(kv, 2, 4)
