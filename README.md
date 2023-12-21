@@ -202,11 +202,29 @@ Crucially, we added a `verifyImmutable` function to the tests to verify that we 
 
 Now we've officially swapped out for the KeyValueDatabase. This is a bit slower for the tests because of the read-consistency checks.
 
+I'm not sure I like how concurrency stuff works here though. I can imagine a world in which writes / reads never make it through due to recurring conflicts. Seems like locks might be the way to go. Postgres uses locks afterall...
+
+[It seems](https://chat.openai.com/c/21ae6c66-fd90-400e-ab4c-14cf49f1f833) that Postgres uses page-level (aka node-level) read and write locks. Nodes are expanded on write, but interestingly, Postgres never merges / redistributes nodes on delete! That makes sense, honestly. It's an expensive operation, and for how much gain? How often are people deleting significant portions of an index without replacing with new values... Databases tend to grow over time! You need to manually call `REINDEX` if you want a clean tree.
+
+## B+ Tree with Locks (bptree-lock.ts)
+
+
+
+
+
+
 
 TODO:
-- transaction for writing to the tree in batch.
+- b+tree with locks
 - test that concurrency checks actually work.
 - implement list functionality.
-- think about locks vs conflict retry trade-off
 
 - expand implementation to interval trees.
+	- Or just use rbush, idb-rbush, sqlite rtree index, etc.
+		- Only works for numerical values!
+	- Interval trees require numerical values because you need to "measure" a center point: https://en.wikipedia.org/wiki/Interval_tree
+		- Range trees are just an extension of interval trees. Need to "measure" area of a node.
+	- Segment trees are often confused with interval trees. (e.g. https://www.dgp.toronto.edu/public_user/JamesStewart/378notes/22intervals/)
+		https://www.quora.com/What-is-a-segment-tree-and-what-are-its-applications
+		https://en.wikipedia.org/wiki/Segment_tree
+
