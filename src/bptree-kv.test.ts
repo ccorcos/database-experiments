@@ -330,7 +330,7 @@ function parseTests(str: string) {
 }
 
 function test(tree: BinaryPlusKeyValueDatabase, str: string) {
-	for (const test of parseTests(structuralTests24)) {
+	for (const test of parseTests(str)) {
 		let label = `${test.op} ${test.n}`
 		if (test.comment) label += " // " + test.comment
 		it(label, () => {

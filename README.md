@@ -208,11 +208,32 @@ I'm not sure I like how concurrency stuff works here though. I can imagine a wor
 
 ## B+ Tree with Locks (bptree-lock.ts)
 
+Extended (`@rocicorp/lock`)[https://github.com/rocicorp/lock/pull/10] to handle a map of locks.
+
+Experimented with a generator approach to locks in `concurrency.ts`. It's cool, but I'm not sure its actually useful.
+
+For b+ trees, there's an interesting approach called ["latch crabbing"](https://stackoverflow.com/questions/52058099/making-a-btree-concurrent-c) in which you release the locks of ancestor nodes once you know that there isn't going to be any merging or splitting of nodes above.
+
+I'm worried that the DenoKV approach with checks and retries isn't going to be the best approach for something low-level like this, and locks seems to actually be the optimal approach in terms of throughput. The downside is (1) having to manage locks is annoying and (2) it's unclear how this approach would extend to Postgres or FoundationDb.
+
+I think for Postgres, we could potentially use plsql or plv8 to do all of this in the database -- that would be super cool. For foundationdb, I think we're stuck with retries. Worst case scenario, we'd have to pipe all writes through a single endpoint to prevent them from colliding. And at this point, we're just re-inventing locks. If it's a write-heavy index, then reads are going to retry constantly too.
+
+
+Lets implement latch crabbing.
+
+
+Postgres doesn't merge!
+
+Batch writes
+
 
 TODO
-- use ordered-array all over the place here.
 - b+tree with locks
+	- on top of postgres vs foundationdb...
+		the crab walk locks makes sense. But how to implement at a higher level like this?
 - test that concurrency checks actually work.
+
+- implement interval trees
 - implement list functionality.
 
 - expand implementation to interval trees.

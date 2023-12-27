@@ -1,49 +1,78 @@
-// TODO: waiting on PR https://github.com/rocicorp/lock/pull/10
-// In the meantime, using `npm link /Users/chet/Code/external/lock`
-
 import { RWLockMap } from "@rocicorp/lock"
 
-type LockCmd = { [key: string]: "r" | "rw" | undefined }
+export class AsyncKeyValueDatabase<T = any> {
+	map = new Map<string, T>()
 
-export class AsyncKeyValueDatabase<V = any> {
-	private map = new Map<string, V>()
+	async get(key: string) {
+		return this.map.get(key)
+	}
 
-	get = async (key: string) => this.map.get(key)
-	set = async (key: string, value: V) => this.map.set(key, value)
-	delete = async (key: string) => this.map.delete(key)
+	async write(tx: { set?: { key: string; value: T }[]; delete?: string[] }) {
+		for (const { key, value } of tx.set || []) this.map.set(key, value)
+		for (const key of tx.delete || []) this.map.delete(key)
+	}
 
-	private locks = new Locks()
-	tx = this.locks.run.bind(this.locks) as Locks["run"]
+	locks = new RWLockMap()
+
+	transact() {
+		return new AsyncKeyValueTransaction(this)
+	}
 }
 
-export class Locks extends RWLockMap {
-	private async multiLock(cmd: LockCmd) {
-		const releases = await Promise.all(
-			Object.entries(cmd).map(([key, value]) => {
-				if (value === "r") return this.read(key)
-				if (value === "rw") return this.write(key)
-			})
-		)
+export class AsyncKeyValueTransaction<T> {
+	locks = new Set<() => void>()
+	cache: { [key: string]: T | undefined } = {}
+	sets: { [key: string]: T } = {}
+	deletes = new Set<string>()
 
-		let called = false
+	constructor(private kv: AsyncKeyValueDatabase<T>) {}
+
+	readLock = async (key: string) => {
+		const release = await this.kv.locks.read(key)
+		this.locks.add(release)
 		return () => {
-			if (called) return
-			called = true
-			for (const release of releases) if (release) release()
+			this.locks.delete(release)
+			release()
 		}
 	}
 
-	async run<T>(fn: () => AsyncGenerator<LockCmd, T, () => void>) {
-		const gen = fn()
-		let nextValue = await gen.next()
-		const releases = new Set<() => void>()
-		while (!nextValue.done) {
-			const release = await this.multiLock(nextValue.value)
-			releases.add(release)
-			nextValue = await gen.next(release)
+	writeLock = async (key: string) => {
+		const release = await this.kv.locks.write(key)
+		this.locks.add(release)
+		return () => {
+			this.locks.delete(release)
+			release()
 		}
-		for (const release of releases) release()
-		const result = nextValue.value
-		return result
+	}
+
+	async get(key: string): Promise<T | undefined> {
+		if (key in this.cache) return this.cache[key]
+		const value = await this.kv.get(key)
+		this.cache[key] = value
+		return value
+	}
+
+	set(key: string, value: T) {
+		this.sets[key] = value
+		this.cache[key] = value
+		this.deletes.delete(key)
+	}
+
+	delete(key: string) {
+		this.cache[key] = undefined
+		delete this.sets[key]
+		this.deletes.add(key)
+	}
+
+	release() {
+		for (const release of this.locks) release()
+	}
+
+	async commit() {
+		await this.kv.write({
+			set: Object.entries(this.sets).map(([key, value]) => ({ key, value })),
+			delete: Array.from(this.deletes),
+		})
+		this.release()
 	}
 }

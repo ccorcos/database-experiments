@@ -10,48 +10,71 @@ describe("AsyncKeyValueDatabase", () => {
 		let result = await kv.get("a")
 		assert.deepEqual(result, undefined)
 
-		await kv.set("a", 1)
+		await kv.write({ set: [{ key: "a", value: 1 }] })
 		result = await kv.get("a")
 		assert.deepEqual(result, 1)
 	})
 
-	it("tx run", async () => {
+	it("concurrency", async () => {
 		const kv = new AsyncKeyValueDatabase<number>()
 
 		const { sleep, run } = new TestClock()
 
-		const p1 = kv.tx(async function* () {
-			yield { a: "r" }
-			await sleep(10)
-			return await kv.get("a")
-		})
+		const p1 = (async () => {
+			const tx = kv.transact()
 
-		const p2 = kv.tx(async function* () {
+			await tx.readLock("a")
+			await sleep(10)
+
+			const result = await kv.get("a")
+			tx.release()
+			return result
+		})()
+
+		const p2 = (async () => {
+			const tx = kv.transact()
+
 			await sleep(2)
-			yield { a: "r" }
-			return await kv.get("a")
-		})
+			await tx.readLock("a")
 
-		const p3 = kv.tx(async function* () {
+			const result = await kv.get("a")
+			tx.release()
+			return result
+		})()
+
+		const p3 = (async () => {
+			const tx = kv.transact()
+
 			await sleep(1)
-			yield { a: "rw" }
-			await sleep(10)
-			await kv.set("a", 1)
-		})
+			await tx.writeLock("a")
 
-		const p4 = kv.tx(async function* () {
+			await sleep(10)
+			await tx.set("a", 1)
+			await tx.commit()
+		})()
+
+		const p4 = (async () => {
+			const tx = kv.transact()
+
 			await sleep(3)
-			yield { a: "rw" }
-			await sleep(10)
-			await kv.set("a", 2)
-			return true
-		})
+			await tx.writeLock("a")
 
-		const p5 = kv.tx(async function* () {
+			await sleep(10)
+			await tx.set("a", 2)
+			await tx.commit()
+			return true
+		})()
+
+		const p5 = (async () => {
+			const tx = kv.transact()
+
 			await sleep(4)
-			yield { a: "r" }
-			return await kv.get("a")
-		})
+			await tx.readLock("a")
+
+			const result = await kv.get("a")
+			tx.release()
+			return result
+		})()
 
 		await run()
 		const [r1, r2, r3, r4, r5] = await Promise.all([p1, p2, p3, p4, p5])

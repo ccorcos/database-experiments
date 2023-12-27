@@ -18,7 +18,7 @@
 	"author": "Chet Corcos <ccorcos@gmail.com>",
 	"license": "MIT",
 	"devDependencies": {
-		"@ccorcos/test-clock": "^0.0.1",
+		"@ccorcos/test-clock": "^0.0.4",
 		"@types/mocha": "whitecolor/mocha-types",
 		"@types/node": "^20.9.1",
 		"mocha": "^10.2.0",

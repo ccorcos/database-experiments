@@ -1,13 +1,12 @@
 /*
 
-Both Postgres and SQLite use B+ trees as the foundation of their indexes.
-
-Even though we have an OrderedKeyValueDatabase, let's build a B+ tree on top of a KeyValueDatabase
-so that we can later extend it to an interval tree and a range tree.
+B+ tree with latch crabbing locking
+https://stackoverflow.com/questions/52058099/making-a-btree-concurrent-c
 
 */
 
 import { orderedArray } from "@ccorcos/ordered-array"
+import { AsyncKeyValueDatabase } from "./kv-lock"
 
 type Key = string | number
 
@@ -32,24 +31,26 @@ const { search, insert, remove } = orderedArray(
 	(item: { key: Key | null; value: string }) => item.key
 )
 
-export class BinaryPlusTransactionalTree {
-	// In preparation for storing nodes in a key-value database.
-	nodes: { [key: Key]: BranchNode | LeafNode | undefined } = {}
-
+export class AsyncBinaryPlusKeyValueDatabase {
 	/**
 	 * minSize must be less than maxSize / 2.
 	 */
-	constructor(public minSize: number, public maxSize: number) {
+	constructor(
+		public kv: AsyncKeyValueDatabase<BranchNode | LeafNode>,
+		public minSize: number,
+		public maxSize: number
+	) {
 		if (minSize > maxSize / 2) throw new Error("Invalid tree size.")
 	}
 
 	// Commit transaction for read-concurrency checks.
-	get = (key: Key): any | undefined => {
-		const tx = new Transaction(this.nodes)
+	async get(key: Key): Promise<any | undefined> {
+		const tx = this.kv.transact()
 
-		const root = tx.get("root")
+		let releaseNode = await tx.readLock("root")
+		const root = await tx.get("root")
 		if (!root) {
-			// No need to tx.check(), we only read one value.
+			tx.release()
 			return // Empty tree
 		}
 
@@ -58,10 +59,10 @@ export class BinaryPlusTransactionalTree {
 			if (node.leaf) {
 				const result = search(node.values, key)
 				if (result.found === undefined) {
-					if (node.id !== "root") tx.check()
+					tx.release()
 					return
 				}
-				if (node.id !== "root") tx.check()
+				tx.release()
 				return node.values[result.found].value
 			}
 
@@ -70,26 +71,34 @@ export class BinaryPlusTransactionalTree {
 			// Closest key that is at least as big as the key...
 			// So the closest should never be less than the minKey.
 			if (result.closest === 0) {
-				tx.check()
+				tx.release()
 				throw new Error("Broken.")
 			}
 
 			const childIndex =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.values[childIndex].value
-			const child = tx.get(childId)
+
+			// Latch Crabbing
+			const releaseChild = await tx.readLock(childId)
+			const child = await tx.get(childId)
 			if (!child) {
-				// Check first in case this node was deleted based on a concurrent write.
-				tx.check()
+				tx.release()
 				throw Error("Missing child node.")
 			}
+
+			releaseNode()
 			node = child
+			releaseNode = releaseChild
+			continue
 		}
 	}
 
-	set = (key: Key, value: any) => {
-		const tx = new Transaction(this.nodes)
-		const root = tx.get("root")
+	async set(key: Key, value: any) {
+		const tx = this.kv.transact()
+
+		let releaseNode = await tx.writeLock("root")
+		const root = await tx.get("root")
 
 		// Intitalize root node.
 		if (!root) {
@@ -98,15 +107,21 @@ export class BinaryPlusTransactionalTree {
 				id: "root",
 				values: [{ key, value }],
 			})
-			tx.commit()
+			await tx.commit()
 			return
 		}
 
 		// Insert into leaf node.
+		let releaseAncestors = () => {}
 		const nodePath = [root]
 		const indexPath: number[] = []
 		while (true) {
 			const node = nodePath[0]
+
+			// Latch Crabbing
+			if (node.values.length < this.maxSize) {
+				releaseAncestors()
+			}
 
 			if (node.leaf) {
 				const newNode = { ...node, values: [...node.values] }
@@ -125,17 +140,24 @@ export class BinaryPlusTransactionalTree {
 			}
 
 			const result = search(node.values, key)
-			const index =
+			const childIndex =
 				result.found !== undefined ? result.found : result.closest - 1
-			const childId = node.values[index].value
-			const child = tx.get(childId)
+			const childId = node.values[childIndex].value
+
+			const releaseChild = await tx.writeLock(childId)
+			const child = await tx.get(childId)
 			if (!child) {
-				tx.check()
+				tx.release()
 				throw Error("Missing child node.")
 			}
+
+			// Latch Crabbing
+			releaseAncestors = combine(releaseNode, releaseAncestors)
+			releaseNode = releaseChild
+
 			// Recur into child.
 			nodePath.unshift(child)
-			indexPath.unshift(index)
+			indexPath.unshift(childIndex)
 		}
 
 		// Balance the tree by splitting nodes, starting from the leaf.
@@ -181,11 +203,11 @@ export class BinaryPlusTransactionalTree {
 			const parent = nodePath.shift()
 			const parentIndex = indexPath.shift()
 			if (!parent) {
-				tx.check()
+				tx.release()
 				throw new Error("Broken.")
 			}
 			if (parentIndex === undefined) {
-				tx.check()
+				tx.release()
 				throw new Error("Broken.")
 			}
 
@@ -201,19 +223,27 @@ export class BinaryPlusTransactionalTree {
 		}
 	}
 
-	delete = (key: Key) => {
-		const tx = new Transaction(this.nodes)
-		const root = tx.get("root")
+	async delete(key: Key) {
+		const tx = this.kv.transact()
+
+		let releaseNode = await tx.writeLock("root")
+		const root = await tx.get("root")
 		if (!root) {
-			// No need to tx.check()
+			tx.release()
 			return
 		}
 
 		// Delete from leaf node.
+		let releaseAncestors = () => {}
 		const nodePath = [root]
 		const indexPath: number[] = []
 		while (true) {
 			const node = nodePath[0]
+
+			// Latch Crabbing, if we on't need to merge, or update parentKey.
+			if (node.values.length > this.minSize && node.values[0].key !== key) {
+				releaseAncestors()
+			}
 
 			if (node.leaf) {
 				const newNode = { ...node, values: [...node.values] }
@@ -232,11 +262,16 @@ export class BinaryPlusTransactionalTree {
 			const index =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.values[index].value
-			const child = tx.get(childId)
+			const releaseChild = await tx.readLock(childId)
+			const child = await tx.get(childId)
 			if (!child) {
-				tx.check()
+				tx.release()
 				throw Error("Missing child node.")
 			}
+
+			// Latch Crabbing
+			releaseAncestors = combine(releaseNode, releaseAncestors)
+			releaseNode = releaseChild
 
 			// Recur into the child.
 			nodePath.unshift(child)
@@ -290,9 +325,10 @@ export class BinaryPlusTransactionalTree {
 				// Root node with only one child becomes its child.
 				if (node.values.length === 1) {
 					const childId = node.values[0].value
-					const child = tx.get(childId)
+					const releaseChild = await tx.writeLock(childId)
+					const child = await tx.get(childId)
 					if (!child) {
-						tx.check()
+						tx.release()
 						throw new Error("Broken.")
 					}
 					const newRoot = { ...child, id: "root" }
@@ -306,11 +342,11 @@ export class BinaryPlusTransactionalTree {
 			const parent = nodePath.shift()
 			const parentIndex = indexPath.shift()
 			if (!parent) {
-				tx.check()
+				tx.release()
 				throw new Error("Broken.")
 			}
 			if (parentIndex === undefined) {
-				tx.check()
+				tx.release()
 				throw new Error("Broken.")
 			}
 
@@ -343,9 +379,10 @@ export class BinaryPlusTransactionalTree {
 			if (parentIndex === 0) {
 				// When we delete from the first element, merge/redistribute with right sibling.
 				const rightId = parent.values[parentIndex + 1].value
-				const rightSibling = tx.get(rightId)
+				const releaseRight = await tx.writeLock(rightId)
+				const rightSibling = await tx.get(rightId)
 				if (!rightSibling) {
-					tx.check()
+					tx.release()
 					throw new Error("Broken.")
 				}
 
@@ -406,9 +443,10 @@ export class BinaryPlusTransactionalTree {
 
 			// Merge/redistribute with left sibling.
 			const leftId = parent.values[parentIndex - 1].value
-			const leftSibling = tx.get(leftId)
+			const releaseLeft = await tx.writeLock(leftId)
+			const leftSibling = await tx.get(leftId)
 			if (!leftSibling) {
-				tx.check()
+				tx.release()
 				throw new Error("Broken.")
 			}
 
@@ -456,22 +494,30 @@ export class BinaryPlusTransactionalTree {
 		}
 	}
 
-	depth() {
-		const tx = new Transaction(this.nodes)
-		const root = tx.get("root")
-		if (!root) return 0
+	async depth() {
+		const tx = this.kv.transact()
+		let releaseNode = await tx.readLock("root")
+		const root = await tx.get("root")
+		if (!root) {
+			tx.release()
+			return 0
+		}
 		let depth = 1
 		let node = root
 		while (!node.leaf) {
 			depth += 1
-			const nextNode = tx.get(node.values[0].value)
+			const childId = node.values[0].value
+			const releaseChld = await tx.readLock(childId)
+			releaseNode()
+			releaseNode = releaseChld
+			const nextNode = await tx.get(childId)
 			if (!nextNode) {
-				tx.check()
+				tx.release()
 				throw new Error("Broken.")
 			}
 			node = nextNode
 		}
-		tx.check()
+		tx.release()
 		return depth
 	}
 }
@@ -480,43 +526,9 @@ function randomId() {
 	return Math.random().toString(36).slice(2, 10)
 }
 
-/** In preparation for using KeyValueDatabase */
-export class Transaction {
-	// checks: { [key: string]: string | undefined } = {}
-	cache: { [key: string]: BranchNode | LeafNode | undefined } = {}
-	sets: { [key: string]: BranchNode | LeafNode } = {}
-	deletes = new Set<string>()
-
-	constructor(
-		public nodes: { [key: Key]: BranchNode | LeafNode | undefined }
-	) {}
-
-	get = (key: string): BranchNode | LeafNode | undefined => {
-		if (key in this.cache) return this.cache[key]
-		const result = this.nodes[key]
-		this.cache[key] = result
-		return result
-	}
-
-	set(key: string, value: BranchNode | LeafNode) {
-		this.sets[key] = value
-		this.cache[key] = value
-		this.deletes.delete(key)
-	}
-
-	delete(key: string) {
-		this.cache[key] = undefined
-		delete this.sets[key]
-		this.deletes.add(key)
-	}
-
-	check() {
-		// For read consistency later.
-	}
-
-	commit() {
-		for (const [key, value] of Object.entries(this.sets))
-			this.nodes[key] = value
-		for (const key of this.deletes) delete this.nodes[key]
+function combine(fn1: () => void, fn2: () => void) {
+	return () => {
+		fn1()
+		fn2()
 	}
 }

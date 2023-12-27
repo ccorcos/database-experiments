@@ -1,7 +1,8 @@
 import { strict as assert } from "assert"
 import { cloneDeep, isEqual, uniq } from "lodash"
 import { describe, it } from "mocha"
-import { BinaryPlusTransactionalTree } from "./bptree-tx"
+import { AsyncBinaryPlusKeyValueDatabase } from "./bptree-lock"
+import { AsyncKeyValueDatabase } from "./kv-lock"
 
 // min = 2, max = 4
 const structuralTests24 = `
@@ -198,55 +199,63 @@ const structuralTests24 = `
 
 `
 
-describe("BinaryPlusTransactionalTree", () => {
-	describe("structural tests 2-4", () => {
-		const tree = new BinaryPlusTransactionalTree(2, 4)
-		test(tree, structuralTests24)
+// Skipping becuase this is pretty slow.
+describe("AsyncBinaryPlusKeyValueDatabase", () => {
+	describe.only("structural tests 2-4", async () => {
+		const kv = new AsyncKeyValueDatabase()
+		const tree = new AsyncBinaryPlusKeyValueDatabase(kv, 2, 4)
+		await test(tree, structuralTests24)
 	})
 
-	describe("property test 2-4 * 100", () => {
-		propertyTest({ minSize: 2, maxSize: 4, testSize: 100 })
+	describe("property test 2-4 * 100", async () => {
+		await propertyTest({ minSize: 2, maxSize: 4, testSize: 100 })
 	})
 
-	describe("property test 3-6 * 100", () => {
-		propertyTest({ minSize: 3, maxSize: 6, testSize: 100 })
+	describe("property test 3-6 * 100", async () => {
+		await propertyTest({ minSize: 3, maxSize: 6, testSize: 100 })
 	})
 
-	it("big tree", () => {
+	it("big tree", async () => {
 		const numbers = randomNumbers(20_000)
-		const tree = new BinaryPlusTransactionalTree(3, 9)
+		const kv = new AsyncKeyValueDatabase()
+		const tree = new AsyncBinaryPlusKeyValueDatabase(kv, 3, 9)
 		for (const number of numbers) {
-			tree.set(number, number * 2)
-			assert.equal(tree.get(number), number * 2)
+			await tree.set(number, number * 2)
+			assert.equal(await tree.get(number), number * 2)
 		}
 		for (const number of numbers) {
-			tree.delete(number)
-			assert.equal(tree.get(number), undefined)
+			await tree.delete(number)
+			assert.equal(await tree.get(number), undefined)
 		}
-		assert.equal(tree.depth(), 1)
+		assert.equal(await tree.depth(), 1)
 	})
 
-	function propertyTest(args: {
+	async function propertyTest(args: {
 		minSize: number
 		maxSize: number
 		testSize: number
 	}) {
 		const numbers = randomNumbers(args.testSize)
 
-		const tree = new BinaryPlusTransactionalTree(args.minSize, args.maxSize)
+		const kv = new AsyncKeyValueDatabase()
+		const tree = new AsyncBinaryPlusKeyValueDatabase(
+			kv,
+			args.minSize,
+			args.maxSize
+		)
 		for (let i = 0; i < numbers.length; i++) {
 			const n = numbers[i]
-			it(`Set ${i} : ${n}`, () => {
+			it(`Set ${i} : ${n}`, async () => {
 				// it(`+ ${n}`, () => {
 
-				verifyImmutable(tree, () => {
-					tree.set(n, n.toString())
-					verify(tree)
+				await verifyImmutable(tree, async () => {
+					await tree.set(n, n.toString())
+					await verify(tree)
 				})
 
 				for (let j = 0; j <= i; j++) {
 					const x = numbers[j]
-					assert.equal(tree.get(x), x.toString())
+					assert.equal(await tree.get(x), x.toString())
 				}
 				// })
 
@@ -257,16 +266,16 @@ describe("BinaryPlusTransactionalTree", () => {
 					// it(`Overwrite ${j}: ${x}`, () => {
 					const t = clone(tree)
 
-					verifyImmutable(t, () => {
-						t.set(x, x * 2)
-						verify(t)
+					await verifyImmutable(tree, async () => {
+						await t.set(x, x * 2)
+						await verify(t)
 					})
 
 					// Check get on all keys.
 					for (let k = 0; k <= i; k++) {
 						const y = numbers[k]
-						if (x === y) assert.equal(t.get(y), y * 2)
-						else assert.equal(t.get(y), y.toString())
+						if (x === y) assert.equal(await t.get(y), y * 2)
+						else assert.equal(await t.get(y), y.toString())
 					}
 					// })
 				}
@@ -277,16 +286,16 @@ describe("BinaryPlusTransactionalTree", () => {
 
 					// it(`Delete ${j} : ${x}`, () => {
 					const t = clone(tree)
-					verifyImmutable(t, () => {
-						t.delete(x)
-						verify(t)
+					await verifyImmutable(tree, async () => {
+						await t.delete(x)
+						await verify(t)
 					})
 
 					// Check get on all keys.
 					for (let k = 0; k <= i; k++) {
 						const y = numbers[k]
-						if (x === y) assert.equal(t.get(y), undefined)
-						else assert.equal(t.get(y), y.toString())
+						if (x === y) assert.equal(await t.get(y), undefined)
+						else assert.equal(await t.get(y), y.toString())
 					}
 					// })
 				}
@@ -324,19 +333,23 @@ function parseTests(str: string) {
 	})
 }
 
-function test(tree: BinaryPlusTransactionalTree, str: string) {
+async function test(tree: AsyncBinaryPlusKeyValueDatabase, str: string) {
 	for (const test of parseTests(str)) {
 		let label = `${test.op} ${test.n}`
 		if (test.comment) label += " // " + test.comment
-		it(label, () => {
-			if (test.op === "+") tree.set(test.n, test.n.toString())
-			if (test.op === "-") tree.delete(test.n)
-			assert.equal(inspect(tree), test.tree, test.comment)
+		it(label, async () => {
+			if (test.op === "+") await tree.set(test.n, test.n.toString())
+			if (test.op === "-") await tree.delete(test.n)
+			assert.equal(await inspect(tree), test.tree, test.comment)
 
 			const value = test.op === "+" ? test.n.toString() : undefined
-			assert.equal(tree.get(test.n), value, test.comment)
+			assert.equal(await tree.get(test.n), value, test.comment)
 
-			assert.equal(tree.depth(), test.tree.split("\n").length, test.comment)
+			assert.equal(
+				await tree.depth(),
+				test.tree.split("\n").length,
+				test.comment
+			)
 		})
 	}
 }
@@ -346,8 +359,11 @@ type KeyTree =
 	| { keys: Key[]; children?: undefined }
 	| { keys: Key[]; children: KeyTree[] }
 
-function toKeyTree(tree: BinaryPlusTransactionalTree, id = "root"): KeyTree {
-	const node = tree.nodes[id]
+async function toKeyTree(
+	tree: AsyncBinaryPlusKeyValueDatabase,
+	id = "root"
+): Promise<KeyTree> {
+	const node = await tree.kv.get(id)
 	if (!node) {
 		console.warn("Missing node!")
 		// throw new Error("Missing node!")
@@ -357,7 +373,9 @@ function toKeyTree(tree: BinaryPlusTransactionalTree, id = "root"): KeyTree {
 	const keys = node.values.map((v) => v.key)
 	if (node.leaf) return { keys: keys }
 
-	const subtrees = node.values.map((v) => toKeyTree(tree, v.value))
+	const subtrees = await Promise.all(
+		node.values.map((v) => toKeyTree(tree, v.value))
+	)
 	return { keys: keys, children: subtrees }
 }
 
@@ -388,8 +406,8 @@ function print(x: any) {
 	return ""
 }
 
-function inspect(tree: BinaryPlusTransactionalTree) {
-	const keyTree = toKeyTree(tree)
+async function inspect(tree: AsyncBinaryPlusKeyValueDatabase) {
+	const keyTree = await toKeyTree(tree)
 	const layers = toTreeLayers(keyTree)
 	const str = layers
 		.map((layer) =>
@@ -399,47 +417,60 @@ function inspect(tree: BinaryPlusTransactionalTree) {
 	return str
 }
 
-function clone(tree: BinaryPlusTransactionalTree) {
-	const cloned = new BinaryPlusTransactionalTree(tree.minSize, tree.maxSize)
-	cloned.nodes = cloneDeep(tree.nodes)
+function clone(tree: AsyncBinaryPlusKeyValueDatabase) {
+	const kv = new AsyncKeyValueDatabase()
+	kv.map = cloneDeep(tree.kv.map)
+	const cloned = new AsyncBinaryPlusKeyValueDatabase(
+		kv,
+		tree.minSize,
+		tree.maxSize
+	)
 	return cloned
 }
 
-function shallowClone(tree: BinaryPlusTransactionalTree) {
-	const cloned = new BinaryPlusTransactionalTree(tree.minSize, tree.maxSize)
-	cloned.nodes = { ...tree.nodes }
+function shallowClone(tree: AsyncBinaryPlusKeyValueDatabase) {
+	const kv = new AsyncKeyValueDatabase()
+	kv.map = new Map(tree.kv.map)
+	const cloned = new AsyncBinaryPlusKeyValueDatabase(
+		kv,
+		tree.minSize,
+		tree.maxSize
+	)
 	return cloned
 }
 
 /** Check for node sizes. */
-function verify(tree: BinaryPlusTransactionalTree, id = "root") {
-	const node = tree.nodes[id]
+async function verify(tree: AsyncBinaryPlusKeyValueDatabase, id = "root") {
+	const node = await tree.kv.get(id)
 	if (id === "root") {
 		if (!node) return
 		if (node.leaf) return
-		for (const { value } of node.values) verify(tree, value)
+		for (const { value } of node.values) await verify(tree, value)
 		return
 	}
 
 	assert.ok(node)
 	assert.ok(node.values.length >= tree.minSize)
-	assert.ok(node.values.length <= tree.maxSize, inspect(tree))
+	assert.ok(node.values.length <= tree.maxSize, await inspect(tree))
 
 	if (node.leaf) return
 	for (const { value } of node.values) verify(tree, value)
 }
 
-function verifyImmutable(tree: BinaryPlusTransactionalTree, fn: () => void) {
+async function verifyImmutable(
+	tree: AsyncBinaryPlusKeyValueDatabase,
+	fn: () => Promise<void>
+) {
 	const shallow = shallowClone(tree)
 	const deep = clone(tree)
 
-	fn()
+	await fn()
 
-	const keys = uniq([...Object.keys(tree.nodes), ...Object.keys(shallow.nodes)])
+	const keys = uniq([...Object.keys(tree.kv.map), ...Object.keys(shallow)])
 	for (const key of keys) {
-		const newNode = tree.nodes[key]
-		const originalValue = deep.nodes[key]
-		const originalRef = shallow.nodes[key]
+		const newNode = await tree.kv.get(key)
+		const originalValue = await deep.kv.get(key)
+		const originalRef = await shallow.kv.get(key)
 
 		if (isEqual(newNode, originalValue)) {
 			assert.ok(

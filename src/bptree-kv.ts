@@ -69,33 +69,24 @@ export class BinaryPlusKeyValueDatabase {
 
 			const result = search(node.values, key)
 
-			// If we find the key in a branch node, recur into that child.
-			if (result.found !== undefined) {
-				const childId = node.values[result.found].value
-				const child = tx.get(childId)
-				if (!child) {
-					// Check first in case this node was deleted based on a concurrent write.
-					tx.check()
-					throw Error("Missing child node.")
-				}
-				node = child
-				continue
-			}
-
 			// Closest key that is at least as big as the key...
 			// So the closest should never be less than the minKey.
 			if (result.closest === 0) {
 				tx.check()
 				throw new Error("Broken.")
 			}
-			// And we should recurd into the `closest-1` child
-			const childId = node.values[result.closest - 1].value
+
+			const childIndex =
+				result.found !== undefined ? result.found : result.closest - 1
+			const childId = node.values[childIndex].value
 			const child = tx.get(childId)
 			if (!child) {
+				// Check first in case this node was deleted based on a concurrent write.
 				tx.check()
 				throw Error("Missing child node.")
 			}
 			node = child
+			continue
 		}
 	}
 
