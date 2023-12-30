@@ -130,7 +130,7 @@ export class AsyncBinaryPlusKeyValueDatabase {
 
 				// No need to rebalance if we're replacing
 				if (existing) {
-					tx.commit()
+					await tx.commit()
 					return
 				}
 
@@ -165,7 +165,7 @@ export class AsyncBinaryPlusKeyValueDatabase {
 		while (node) {
 			const size = node.values.length
 			if (size <= this.maxSize) {
-				tx.commit()
+				await tx.commit()
 				return
 			}
 
@@ -195,7 +195,7 @@ export class AsyncBinaryPlusKeyValueDatabase {
 					],
 				}
 				tx.set(newRoot.id, newRoot)
-				tx.commit()
+				await tx.commit()
 				return
 			}
 
@@ -221,6 +221,8 @@ export class AsyncBinaryPlusKeyValueDatabase {
 			// Recur
 			node = newParent
 		}
+
+		throw new Error("Broken.")
 	}
 
 	async delete(key: Key) {
@@ -250,7 +252,7 @@ export class AsyncBinaryPlusKeyValueDatabase {
 				const exists = remove(newNode.values, key)
 				tx.set(newNode.id, newNode)
 				if (!exists) {
-					tx.commit()
+					await tx.commit()
 					return
 				}
 				// Continue to rebalance.
@@ -262,7 +264,7 @@ export class AsyncBinaryPlusKeyValueDatabase {
 			const index =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.values[index].value
-			const releaseChild = await tx.readLock(childId)
+			const releaseChild = await tx.writeLock(childId)
 			const child = await tx.get(childId)
 			if (!child) {
 				tx.release()
@@ -318,14 +320,14 @@ export class AsyncBinaryPlusKeyValueDatabase {
 			if (node.id === "root") {
 				// A root leaf node has no minSize constaint.
 				if (node.leaf) {
-					tx.commit()
+					await tx.commit()
 					return
 				}
 
 				// Root node with only one child becomes its child.
 				if (node.values.length === 1) {
 					const childId = node.values[0].value
-					const releaseChild = await tx.writeLock(childId)
+					// No need to lock here because it should already be locked.
 					const child = await tx.get(childId)
 					if (!child) {
 						tx.release()
@@ -333,9 +335,10 @@ export class AsyncBinaryPlusKeyValueDatabase {
 					}
 					const newRoot = { ...child, id: "root" }
 					tx.set(newRoot.id, newRoot)
+					tx.delete(childId)
 				}
 
-				tx.commit()
+				await tx.commit()
 				return
 			}
 
@@ -355,12 +358,12 @@ export class AsyncBinaryPlusKeyValueDatabase {
 				const parentItem = parent.values[parentIndex]
 				// No need to recusively update the left-most branch.
 				if (parentItem.key === null) {
-					tx.commit()
+					await tx.commit()
 					return
 				}
 				// No need to recursively update if the minKey didn't change.
 				if (parentItem.key === node.values[0].key) {
-					tx.commit()
+					await tx.commit()
 					return
 				}
 
@@ -435,6 +438,7 @@ export class AsyncBinaryPlusKeyValueDatabase {
 				}
 				tx.set(newRight.id, newRight)
 				tx.set(newParent.id, newParent)
+				tx.delete(node.id)
 
 				// Recur
 				node = newParent
@@ -487,11 +491,14 @@ export class AsyncBinaryPlusKeyValueDatabase {
 
 			tx.set(newLeft.id, newLeft)
 			tx.set(newParent.id, newParent)
+			tx.delete(node.id)
 
 			// Recur
 			node = newParent
 			continue
 		}
+
+		tx.release()
 	}
 
 	async depth() {

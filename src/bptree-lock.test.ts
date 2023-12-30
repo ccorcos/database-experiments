@@ -2,7 +2,7 @@ import { strict as assert } from "assert"
 import { cloneDeep, isEqual, uniq } from "lodash"
 import { describe, it } from "mocha"
 import { AsyncBinaryPlusKeyValueDatabase } from "./bptree-lock"
-import { AsyncKeyValueDatabase } from "./kv-lock"
+import { AsyncKeyValueDatabase, AsyncKeyValueTransaction } from "./kv-lock"
 
 // min = 2, max = 4
 const structuralTests24 = `
@@ -199,10 +199,85 @@ const structuralTests24 = `
 
 `
 
+// Test class to make assertions about locks.
+class TestAsyncKeyValueDatabase<T> extends AsyncKeyValueDatabase<T> {
+	transact() {
+		return new TestTransaction<T>(this)
+	}
+}
+
+class TestTransaction<T> extends AsyncKeyValueTransaction<T> {
+	readLocks = new Set<string>()
+	async readLock(key: string) {
+		const release = await super.readLock(key)
+
+		assert.equal(this.readLocks.has(key), false)
+		assert.equal(this.writeLocks.has(key), false)
+
+		this.readLocks.add(key)
+		return () => {
+			this.readLocks.delete(key)
+			release()
+		}
+	}
+
+	writeLocks = new Set<string>()
+	async writeLock(key: string) {
+		const release = await super.writeLock(key)
+
+		assert.equal(this.readLocks.has(key), false)
+		assert.equal(this.writeLocks.has(key), false)
+
+		this.writeLocks.add(key)
+		// console.trace("Lock", key)
+		return () => {
+			// console.trace("Release", key)
+			this.writeLocks.delete(key)
+			release()
+		}
+	}
+
+	async get(key: string): Promise<T | undefined> {
+		assert.equal(this.readLocks.has(key) || this.writeLocks.has(key), true)
+		return super.get(key)
+	}
+
+	set(key: string, value: T) {
+		return super.set(key, value)
+	}
+
+	delete(key: string) {
+		assert.equal(this.writeLocks.has(key), true)
+		return super.delete(key)
+	}
+
+	async commit() {
+		for (const key in this.sets) {
+			if ((await this.kv.get(key)) !== undefined) {
+				assert.equal(
+					this.writeLocks.has(key),
+					true,
+					"Missing write lock for " + key
+				)
+			}
+		}
+		for (const key of this.deletes) {
+			assert.equal(
+				this.writeLocks.has(key),
+				true,
+				"Missing delete lock for " + key
+			)
+		}
+		return super.commit()
+	}
+}
+
 // Skipping becuase this is pretty slow.
-describe("AsyncBinaryPlusKeyValueDatabase", () => {
+describe("AsyncBinaryPlusKeyValueDatabase", function () {
+	this.timeout(10_000)
+
 	describe.only("structural tests 2-4", async () => {
-		const kv = new AsyncKeyValueDatabase()
+		const kv = new TestAsyncKeyValueDatabase() as AsyncKeyValueDatabase
 		const tree = new AsyncBinaryPlusKeyValueDatabase(kv, 2, 4)
 		await test(tree, structuralTests24)
 	})
@@ -217,7 +292,7 @@ describe("AsyncBinaryPlusKeyValueDatabase", () => {
 
 	it("big tree", async () => {
 		const numbers = randomNumbers(20_000)
-		const kv = new AsyncKeyValueDatabase()
+		const kv = new TestAsyncKeyValueDatabase() as AsyncKeyValueDatabase
 		const tree = new AsyncBinaryPlusKeyValueDatabase(kv, 3, 9)
 		for (const number of numbers) {
 			await tree.set(number, number * 2)
@@ -237,7 +312,7 @@ describe("AsyncBinaryPlusKeyValueDatabase", () => {
 	}) {
 		const numbers = randomNumbers(args.testSize)
 
-		const kv = new AsyncKeyValueDatabase()
+		const kv = new TestAsyncKeyValueDatabase() as AsyncKeyValueDatabase
 		const tree = new AsyncBinaryPlusKeyValueDatabase(
 			kv,
 			args.minSize,
@@ -333,13 +408,22 @@ function parseTests(str: string) {
 	})
 }
 
+function assertNoLocks(tree: AsyncBinaryPlusKeyValueDatabase) {
+	assert.equal(tree.kv.locks["_locks"].size, 0)
+}
+
 async function test(tree: AsyncBinaryPlusKeyValueDatabase, str: string) {
 	for (const test of parseTests(str)) {
 		let label = `${test.op} ${test.n}`
 		if (test.comment) label += " // " + test.comment
 		it(label, async () => {
+			assertNoLocks(tree)
 			if (test.op === "+") await tree.set(test.n, test.n.toString())
 			if (test.op === "-") await tree.delete(test.n)
+			assertNoLocks(tree)
+
+			// TODO: delete is hung on a lock!
+
 			assert.equal(await inspect(tree), test.tree, test.comment)
 
 			const value = test.op === "+" ? test.n.toString() : undefined
@@ -418,7 +502,7 @@ async function inspect(tree: AsyncBinaryPlusKeyValueDatabase) {
 }
 
 function clone(tree: AsyncBinaryPlusKeyValueDatabase) {
-	const kv = new AsyncKeyValueDatabase()
+	const kv = new TestAsyncKeyValueDatabase() as AsyncKeyValueDatabase
 	kv.map = cloneDeep(tree.kv.map)
 	const cloned = new AsyncBinaryPlusKeyValueDatabase(
 		kv,
@@ -429,7 +513,7 @@ function clone(tree: AsyncBinaryPlusKeyValueDatabase) {
 }
 
 function shallowClone(tree: AsyncBinaryPlusKeyValueDatabase) {
-	const kv = new AsyncKeyValueDatabase()
+	const kv = new TestAsyncKeyValueDatabase() as AsyncKeyValueDatabase
 	kv.map = new Map(tree.kv.map)
 	const cloned = new AsyncBinaryPlusKeyValueDatabase(
 		kv,

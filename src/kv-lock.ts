@@ -25,9 +25,10 @@ export class AsyncKeyValueTransaction<T> {
 	sets: { [key: string]: T } = {}
 	deletes = new Set<string>()
 
-	constructor(private kv: AsyncKeyValueDatabase<T>) {}
+	constructor(public kv: AsyncKeyValueDatabase<T>) {}
 
-	readLock = async (key: string) => {
+	async readLock(key: string) {
+		// console.log("READ", key)
 		const release = await this.kv.locks.read(key)
 		this.locks.add(release)
 		return () => {
@@ -36,7 +37,8 @@ export class AsyncKeyValueTransaction<T> {
 		}
 	}
 
-	writeLock = async (key: string) => {
+	async writeLock(key: string) {
+		// console.trace("WRITE", key)
 		const release = await this.kv.locks.write(key)
 		this.locks.add(release)
 		return () => {

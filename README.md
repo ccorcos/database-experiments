@@ -226,6 +226,8 @@ Postgres doesn't merge!
 
 Batch writes
 
+- Cleanup deletes nodes in bptree
+
 
 TODO
 - b+tree with locks
