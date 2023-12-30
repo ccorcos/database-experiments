@@ -219,31 +219,27 @@ I'm worried that the DenoKV approach with checks and retries isn't going to be t
 I think for Postgres, we could potentially use plsql or plv8 to do all of this in the database -- that would be super cool. For foundationdb, I think we're stuck with retries. Worst case scenario, we'd have to pipe all writes through a single endpoint to prevent them from colliding. And at this point, we're just re-inventing locks. If it's a write-heavy index, then reads are going to retry constantly too.
 
 
-Lets implement latch crabbing.
 
 
-Postgres doesn't merge!
+HERE
+- write about async kv and concurrency approach
+- risks of lock contention.
+- latch crabbing
+- Postgres doesn't merge on deletes! interesting to explain why.
+- LATER: Batch writes
+- How to implement this kind of thing on another database? Postgres or FoundationDb.
 
-Batch writes
-
+FIX
 - Cleanup deletes nodes in bptree
 
-
 TODO
-- b+tree with locks
-	- on top of postgres vs foundationdb...
-		the crab walk locks makes sense. But how to implement at a higher level like this?
-- test that concurrency checks actually work.
-
 - implement interval trees
-- implement list functionality.
-
-- expand implementation to interval trees.
-	- Or just use rbush, idb-rbush, sqlite rtree index, etc.
-		- Only works for numerical values!
+	- rbush, idb-rbush, sqlite rtree index, only work for numerical values
 	- Interval trees require numerical values because you need to "measure" a center point: https://en.wikipedia.org/wiki/Interval_tree
 		- Range trees are just an extension of interval trees. Need to "measure" area of a node.
 	- Segment trees are often confused with interval trees. (e.g. https://www.dgp.toronto.edu/public_user/JamesStewart/378notes/22intervals/)
 		https://www.quora.com/What-is-a-segment-tree-and-what-are-its-applications
 		https://en.wikipedia.org/wiki/Segment_tree
 
+
+- implement list functionality.
