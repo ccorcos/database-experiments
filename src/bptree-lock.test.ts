@@ -1,3 +1,4 @@
+import { TestClock } from "@ccorcos/test-clock"
 import { strict as assert } from "assert"
 import { cloneDeep, isEqual, uniq } from "lodash"
 import { describe, it } from "mocha"
@@ -200,7 +201,23 @@ const structuralTests24 = `
 `
 
 // Test class to make assertions about locks.
+// Also introduce delays for concurrency.
 class TestAsyncKeyValueDatabase<T> extends AsyncKeyValueDatabase<T> {
+	constructor(private delay?: () => Promise<void>) {
+		super()
+	}
+
+	async get(key: string) {
+		await this.delay?.()
+		return this.map.get(key)
+	}
+
+	async write(tx: { set?: { key: string; value: T }[]; delete?: string[] }) {
+		await this.delay?.()
+		for (const { key, value } of tx.set || []) this.map.set(key, value)
+		for (const key of tx.delete || []) this.map.delete(key)
+	}
+
 	transact() {
 		return new TestTransaction<T>(this)
 	}
@@ -276,7 +293,7 @@ class TestTransaction<T> extends AsyncKeyValueTransaction<T> {
 describe("AsyncBinaryPlusKeyValueDatabase", function () {
 	this.timeout(10_000)
 
-	describe.only("structural tests 2-4", async () => {
+	describe("structural tests 2-4", async () => {
 		const kv = new TestAsyncKeyValueDatabase() as AsyncKeyValueDatabase
 		const tree = new AsyncBinaryPlusKeyValueDatabase(kv, 2, 4)
 		await test(tree, structuralTests24)
@@ -303,6 +320,62 @@ describe("AsyncBinaryPlusKeyValueDatabase", function () {
 			assert.equal(await tree.get(number), undefined)
 		}
 		assert.equal(await tree.depth(), 1)
+	})
+
+	it.only("concurreny reads and write", async () => {
+		const clock = new TestClock()
+
+		const sleep = (n: number) => clock.sleep(Math.random() * n)
+
+		const kv = new TestAsyncKeyValueDatabase(() =>
+			sleep(5)
+		) as AsyncKeyValueDatabase
+		const tree = new AsyncBinaryPlusKeyValueDatabase(kv, 3, 6)
+
+		const size = 500
+		const numbers = randomNumbers(size)
+
+		const writeAll = () =>
+			numbers.map(async (number) => {
+				await sleep(20)
+				await tree.set(number, number)
+			})
+
+		const readAll = () =>
+			numbers.map(async (number) => {
+				await sleep(20)
+				await tree.get(number)
+			})
+
+		const deleteSome = (modN: number) =>
+			numbers.map(async (number, index) => {
+				if (index % modN !== 0) return
+				await sleep(20)
+				await tree.delete(number)
+			})
+
+		const promises = [
+			writeAll(),
+			writeAll(),
+			writeAll(),
+			readAll(),
+			readAll(),
+			readAll(),
+			deleteSome(7),
+			deleteSome(5),
+			deleteSome(5),
+		]
+
+		await clock.run()
+		await Promise.all(promises)
+
+		await Promise.all(
+			numbers.map(async (number, index) => {
+				if (index % 7 === 0 || index % 5 === 0) return
+				const result = await tree.get(number)
+				assert.equal(result, number)
+			})
+		)
 	})
 
 	async function propertyTest(args: {
