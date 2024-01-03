@@ -1,4 +1,4 @@
-import { RWLockMap } from "@rocicorp/lock"
+import { RWLockMap } from "@ccorcos/lock"
 
 export class AsyncKeyValueDatabase<T = any> {
 	map = new Map<string, T>()

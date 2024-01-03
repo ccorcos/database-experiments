@@ -1,7 +1,7 @@
 // TODO: waiting on PR https://github.com/rocicorp/lock/pull/10
 // In the meantime, using `npm link /Users/chet/Code/external/lock`
 
-import { RWLockMap } from "@rocicorp/lock"
+import { RWLockMap } from "@ccorcos/lock"
 
 export type LockCmd = { [key: string]: "r" | "rw" | undefined }
 

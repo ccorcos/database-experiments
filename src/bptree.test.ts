@@ -406,6 +406,7 @@ function clone(tree: BinaryPlusTree) {
 function verify(tree: BinaryPlusTree, id = "root") {
 	const node = tree.nodes[id]
 	if (id === "root") {
+		assert.equal(countNodes(tree), Object.keys(tree.nodes).length)
 		if (!node) return
 		if (node.leaf) return
 		for (const { value } of node.values) verify(tree, value)
@@ -418,4 +419,24 @@ function verify(tree: BinaryPlusTree, id = "root") {
 
 	if (node.leaf) return
 	for (const { value } of node.values) verify(tree, value)
+}
+
+function countNodes(tree: BinaryPlusTree, id = "root") {
+	const node = tree.nodes[id]
+	if (id === "root") {
+		if (!node) return 0
+		if (node.leaf) return 1
+		let count = 1
+		for (const { value } of node.values) count += countNodes(tree, value)
+		return count
+	}
+
+	assert.ok(node)
+	assert.ok(node.values.length >= tree.minSize)
+	assert.ok(node.values.length <= tree.maxSize, inspect(tree))
+
+	if (node.leaf) return 1
+	let count = 1
+	for (const { value } of node.values) count += countNodes(tree, value)
+	return count
 }

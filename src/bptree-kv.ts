@@ -300,6 +300,7 @@ export class BinaryPlusKeyValueDatabase {
 					}
 					const newRoot = { ...child, id: "root" }
 					tx.set(newRoot.id, newRoot)
+					tx.delete(childId)
 				}
 
 				tx.commit()
@@ -401,6 +402,7 @@ export class BinaryPlusKeyValueDatabase {
 				}
 				tx.set(newRight.id, newRight)
 				tx.set(newParent.id, newParent)
+				tx.delete(node.id)
 
 				// Recur
 				node = newParent
@@ -452,6 +454,7 @@ export class BinaryPlusKeyValueDatabase {
 
 			tx.set(newLeft.id, newLeft)
 			tx.set(newParent.id, newParent)
+			tx.delete(node.id)
 
 			// Recur
 			node = newParent

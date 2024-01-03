@@ -422,6 +422,7 @@ function shallowClone(tree: BinaryPlusKeyValueDatabase) {
 function verify(tree: BinaryPlusKeyValueDatabase, id = "root") {
 	const node = tree.kv.get(id)?.value
 	if (id === "root") {
+		assert.equal(countNodes(tree), Object.keys(tree.kv.map).length)
 		if (!node) return
 		if (node.leaf) return
 		for (const { value } of node.values) verify(tree, value)
@@ -434,6 +435,26 @@ function verify(tree: BinaryPlusKeyValueDatabase, id = "root") {
 
 	if (node.leaf) return
 	for (const { value } of node.values) verify(tree, value)
+}
+
+function countNodes(tree: BinaryPlusKeyValueDatabase, id = "root") {
+	const node = tree.kv.get(id)?.value
+	if (id === "root") {
+		if (!node) return 0
+		if (node.leaf) return 1
+		let count = 1
+		for (const { value } of node.values) count += countNodes(tree, value)
+		return count
+	}
+
+	assert.ok(node)
+	assert.ok(node.values.length >= tree.minSize)
+	assert.ok(node.values.length <= tree.maxSize, inspect(tree))
+
+	if (node.leaf) return 1
+	let count = 1
+	for (const { value } of node.values) count += countNodes(tree, value)
+	return count
 }
 
 function verifyImmutable(tree: BinaryPlusKeyValueDatabase, fn: () => void) {

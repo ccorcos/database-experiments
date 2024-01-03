@@ -202,49 +202,41 @@ Crucially, we added a `verifyImmutable` function to the tests to verify that we 
 
 Now we've officially swapped out for the KeyValueDatabase. This is a bit slower for the tests because of the read-consistency checks.
 
-I'm not sure I like how concurrency stuff works here though. I can imagine a world in which writes / reads never make it through due to recurring conflicts. Seems like locks might be the way to go. Postgres uses locks afterall...
-
-
+I'm not sure I like how concurrency stuff works here though. I can imagine a world in which writes / reads never make it through due to recurring conflicts. Seems like locks might be the way to go. The benefit of the DenoKV / FoundationDb approach with versionstamps is for coordinating writes in a distributed system. But for this B+Tree, its probably going to run in a single place / instance. So locks is an optimal approach in terms of throughput. Postgres uses locks afterall... but locks are annoying.
 
 ## B+ Tree with Locks (bptree-lock.ts)
 
 [It seems](https://chat.openai.com/c/21ae6c66-fd90-400e-ab4c-14cf49f1f833) that Postgres uses page-level (aka node-level) read and write locks. Nodes are expanded on write, but interestingly, Postgres never merges / redistributes nodes on delete! That makes sense, honestly. It's an expensive operation, and for how much gain? How often are people deleting significant portions of an index without replacing with new values... Databases tend to grow over time! You need to manually call `REINDEX` if you want a clean tree.
 
-
-
-
-Extended (`@rocicorp/lock`)[https://github.com/rocicorp/lock/pull/10] to handle a map of locks.
-
-Experimented with a generator approach to locks in `concurrency.ts`. It's cool, but I'm not sure its actually useful.
+Extended (`@rocicorp/lock`)[https://github.com/rocicorp/lock/pull/10] to handle a dynamic of locks — publishing under `@ccorcos/lock`. I experimented with a generator approach to using locks in `concurrency.ts`. It's cool, but I'm not sure its actually useful for what I need.
 
 For b+ trees, there's an interesting approach called ["latch crabbing"](https://stackoverflow.com/questions/52058099/making-a-btree-concurrent-c) in which you release the locks of ancestor nodes once you know that there isn't going to be any merging or splitting of nodes above.
 
-I'm worried that the DenoKV approach with checks and retries isn't going to be the best approach for something low-level like this, and locks seems to actually be the optimal approach in terms of throughput. The downside is (1) having to manage locks is annoying and (2) it's unclear how this approach would extend to Postgres or FoundationDb.
+It's unclear how this approach would extend to Postgres or FoundationDb. I think for Postgres, we could potentially use plsql or plv8 to do all of this in the database -- that would be super cool. For foundationdb, I think we're stuck with retries. Worst case scenario, we'd have to pipe all writes through a single endpoint to prevent them from colliding. And at this point, we're just re-inventing locks. If it's a write-heavy index, then reads are going to retry constantly too.
 
-I think for Postgres, we could potentially use plsql or plv8 to do all of this in the database -- that would be super cool. For foundationdb, I think we're stuck with retries. Worst case scenario, we'd have to pipe all writes through a single endpoint to prevent them from colliding. And at this point, we're just re-inventing locks. If it's a write-heavy index, then reads are going to retry constantly too.
+Anyways, `kv-lock.ts` contains an async KeyValueDatabase with a RWLockMapo for managing locks. There's a risk of lock contention if two locks are waiting on each other forever.
+
+A couple missing features for out B+ trees.
+- [ ] list querying
+- [ ] batch writes
+
+## Interval B+ Tree (itree.ts)
+
+There is a subtle difference between a [Segment Tree](ttps://www.dgp.toronto.edu/public_user/JamesStewart/378notes/22intervals/) and an [Interval Tree](https://en.wikipedia.org/wiki/Interval_tree). I find that in reality, they are often conflated with each other.
+
+A Range Tree (aka rtree) is a 2d generalization of an interval tree. However typical rtree implementations are specifically designed for geospatial map data (e.g. `rbush`), thus the values of the ranges must be numerical. These numerical values are used to measure the size of a node and the centerpoint of a node to help determine which node to put a new element inside of. This is bad news for us because we want out keys to be lexicographical ranges!
+
+SQLite's rtree index is 2D numerical. Postgres GiST index is complicated. For numerical values, it uses an rtree-like structure. But it does accept text values but then it does trigram matching which doesn't seem to be what we want.
+
+The most common usecase for an interval tree is for date range queries, e.g. "get me all of the events that overlap with this week". However, these dates are usually translated into a numerical value so that doesn't help us much.
+
+The concept isn't all that complicated though... We have a tree sorted by start, and propagate the maxEnd for the node all the way up the tree.
 
 
 
 
-HERE
-- write about async kv and concurrency approach
-- risks of lock contention.
-- latch crabbing
-- Postgres doesn't merge on deletes! interesting to explain why.
-- LATER: Batch writes
-- How to implement this kind of thing on another database? Postgres or FoundationDb.
-
-FIX
-- Cleanup deletes nodes in bptree
 
 TODO
-- implement interval trees
-	- rbush, idb-rbush, sqlite rtree index, only work for numerical values
-	- Interval trees require numerical values because you need to "measure" a center point: https://en.wikipedia.org/wiki/Interval_tree
-		- Range trees are just an extension of interval trees. Need to "measure" area of a node.
-	- Segment trees are often confused with interval trees. (e.g. https://www.dgp.toronto.edu/public_user/JamesStewart/378notes/22intervals/)
-		https://www.quora.com/What-is-a-segment-tree-and-what-are-its-applications
-		https://en.wikipedia.org/wiki/Segment_tree
-
-
+- Cleanup deletes nodes in bptree
+- How to implement this kind of thing on another database? Postgres, FoundationDb, SQLite.
 - implement list functionality.

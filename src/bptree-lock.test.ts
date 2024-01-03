@@ -322,7 +322,7 @@ describe("AsyncBinaryPlusKeyValueDatabase", function () {
 		assert.equal(await tree.depth(), 1)
 	})
 
-	it.only("concurreny reads and write", async () => {
+	it("concurreny reads and write", async () => {
 		const clock = new TestClock()
 
 		const sleep = (n: number) => clock.sleep(Math.random() * n)
@@ -332,7 +332,7 @@ describe("AsyncBinaryPlusKeyValueDatabase", function () {
 		) as AsyncKeyValueDatabase
 		const tree = new AsyncBinaryPlusKeyValueDatabase(kv, 3, 6)
 
-		const size = 500
+		const size = 5000
 		const numbers = randomNumbers(size)
 
 		const writeAll = () =>

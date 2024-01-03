@@ -226,9 +226,11 @@ export class BinaryPlusTree {
 
 				// If node with only one child becomes its child.
 				if (node.values.length === 1) {
-					const newRoot = this.nodes[node.values[0].value]
-					if (!newRoot) throw new Error("Broken.")
-					this.nodes["root"] = { ...newRoot, id: "root" }
+					const childId = node.values[0].value
+					const childNode = this.nodes[childId]
+					if (!childNode) throw new Error("Broken.")
+					this.nodes["root"] = { ...childNode, id: "root" }
+					delete this.nodes[childId]
 				}
 				return
 			}
@@ -281,6 +283,7 @@ export class BinaryPlusTree {
 						key: leftMost ? null : rightSibling.values[0].key,
 						value: rightSibling.id,
 					}
+					delete this.nodes[node.id]
 				}
 			} else {
 				const leftSibling = this.nodes[parent.values[parentIndex - 1].value]
@@ -303,6 +306,8 @@ export class BinaryPlusTree {
 					// No need to update minKey because we added to the right.
 					// Just need to delete the old node.
 					parent.values.splice(parentIndex, 1)
+
+					delete this.nodes[node.id]
 				}
 			}
 

@@ -297,6 +297,7 @@ export class BinaryPlusTransactionalTree {
 					}
 					const newRoot = { ...child, id: "root" }
 					tx.set(newRoot.id, newRoot)
+					tx.delete(childId)
 				}
 
 				tx.commit()
@@ -398,6 +399,7 @@ export class BinaryPlusTransactionalTree {
 				}
 				tx.set(newRight.id, newRight)
 				tx.set(newParent.id, newParent)
+				tx.delete(node.id)
 
 				// Recur
 				node = newParent
@@ -449,6 +451,7 @@ export class BinaryPlusTransactionalTree {
 
 			tx.set(newLeft.id, newLeft)
 			tx.set(newParent.id, newParent)
+			tx.delete(node.id)
 
 			// Recur
 			node = newParent
