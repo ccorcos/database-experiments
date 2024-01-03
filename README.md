@@ -237,6 +237,6 @@ The concept isn't all that complicated though... We have a tree sorted by start,
 
 
 TODO
-- Cleanup deletes nodes in bptree
+- bugs deletings all the way to the root node?
 - How to implement this kind of thing on another database? Postgres, FoundationDb, SQLite.
 - implement list functionality.

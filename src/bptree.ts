@@ -25,11 +25,19 @@ export type BranchNode = {
 export type LeafNode = {
 	leaf: true
 	id: string
+	// Key can't be null in a leaf node, but leaving it here for type convenience.
 	values: { key: Key | null; value: any }[]
 }
 
 const { search, insert, remove } = orderedArray(
-	(item: { key: Key | null; value: string }) => item.key
+	(item: { key: Key | null }) => item.key,
+	(a, b) => {
+		if (a === b) return 0
+		if (a === null) return -1
+		if (b === null) return 1
+		if (a > b) return 1
+		else return -1
+	}
 )
 
 export class BinaryPlusTree {

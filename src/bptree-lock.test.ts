@@ -455,7 +455,7 @@ describe("AsyncBinaryPlusKeyValueDatabase", function () {
 function randomNumbers(size: number) {
 	const numbers: number[] = []
 	for (let i = 0; i < size; i++)
-		numbers.push(Math.round(Math.random() * size * 10))
+		numbers.push(Math.round((Math.random() - 0.5) * size * 10))
 	return uniq(numbers)
 }
 
