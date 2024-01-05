@@ -1,15 +1,12 @@
 /*
 
-This is just a B+tree that maintains a count of all the items in the tree.
-
-This is the first step in generalizing to something like GiST so we can more easily implement an interval tree.
-
-*/
-
-/*
-
-TODO:
-- better types / names of stuff.
+- better types.
+- tuple keys
+- list query
+---
+- count aggregation
+- generalize to GiST
+- interval range query
 
 */
 
@@ -17,61 +14,69 @@ import { orderedArray } from "@ccorcos/ordered-array"
 
 type Key = string | number
 
-export type BranchNode = {
+export type BranchNode<K> = {
 	leaf?: false
 	id: string
-	children: { minKey: Key | null; childId: string }[]
+	children: { minKey: K | null; childId: string }[]
 }
 
-export type LeafNode<V> = {
+export type LeafNode<K, V> = {
 	leaf: true
 	id: string
-	values: { key: Key; value: V }[]
+	values: { key: K; value: V }[]
 }
 
-const {
-	search: searchLeaf,
-	insert: insertLeaf,
-	remove: removeLeaf,
-} = orderedArray((item: { key: Key }) => item.key)
-
-function compareKey(a: Key | null, b: Key | null) {
+function compare(a: any, b: any) {
 	if (a === b) return 0
-	if (a === null) return -1
-	if (b === null) return 1
 	if (a > b) return 1
-	else return -1
+	return -1
 }
 
-const { search: searchBranch } = orderedArray(
-	(item: { minKey: Key | null }) => item.minKey,
-	compareKey
-)
-
-export class BinaryPlusTree2<V = any> {
+export class BinaryPlusTree2<K = string | number, V = any> {
 	// In preparation for storing nodes in a key-value database.
-	nodes: { [key: Key]: BranchNode | LeafNode<V> | undefined } = {}
+	nodes: { [key: Key]: BranchNode<K> | LeafNode<K, V> | undefined } = {}
 
 	/**
 	 * minSize must be less than maxSize / 2.
 	 */
-	constructor(public minSize: number, public maxSize: number) {
+	constructor(
+		public minSize: number,
+		public maxSize: number,
+		public compareKey: (a: K, b: K) => number = compare
+	) {
 		if (minSize > maxSize / 2) throw new Error("Invalid tree size.")
 	}
 
-	get = (key: Key): V | undefined => {
+	private leafValues = orderedArray(
+		(item: { key: K }) => item.key,
+		this.compareKey
+	)
+
+	private compareBranchKey = (a: K | null, b: K | null) => {
+		if (a === null || b === null) {
+			if (a === null) return -1
+			if (b === null) return 1
+		}
+		return this.compareKey(a, b)
+	}
+	private branchChildren = orderedArray(
+		(item: { minKey: K | null }) => item.minKey,
+		this.compareBranchKey
+	)
+
+	get = (key: K): V | undefined => {
 		const root = this.nodes["root"]
 		if (!root) return // Empty tree
 
 		let node = root
 		while (true) {
 			if (node.leaf) {
-				const result = searchLeaf(node.values, key)
+				const result = this.leafValues.search(node.values, key)
 				if (result.found === undefined) return
 				return node.values[result.found].value
 			}
 
-			const result = searchBranch(node.children, key)
+			const result = this.branchChildren.search(node.children, key)
 
 			// Closest key that is at least as big as the key...
 			// So the closest should never be less than the minKey.
@@ -86,7 +91,7 @@ export class BinaryPlusTree2<V = any> {
 		}
 	}
 
-	set = (key: Key, value: V) => {
+	set = (key: K, value: V) => {
 		const root = this.nodes["root"]
 
 		// Intitalize root node.
@@ -106,13 +111,13 @@ export class BinaryPlusTree2<V = any> {
 			const node = nodePath[0]
 
 			if (node.leaf) {
-				const existing = insertLeaf(node.values, { key, value })
+				const existing = this.leafValues.insert(node.values, { key, value })
 				// No need to rebalance if we're replacing
 				if (existing) return
 				break
 			}
 
-			const result = searchBranch(node.children, key)
+			const result = this.branchChildren.search(node.children, key)
 			const index =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.children[index].childId
@@ -133,7 +138,7 @@ export class BinaryPlusTree2<V = any> {
 			if (node.leaf) {
 				// NOTE: this mutates the array!
 				const rightValues = node.values.splice(splitIndex)
-				const rightNode: LeafNode<V> = {
+				const rightNode: LeafNode<K, V> = {
 					id: randomId(),
 					leaf: true,
 					values: rightValues,
@@ -142,14 +147,14 @@ export class BinaryPlusTree2<V = any> {
 				const rightMinKey = rightNode.values[0].key
 
 				if (node.id === "root") {
-					const leftNode: LeafNode<V> = {
+					const leftNode: LeafNode<K, V> = {
 						id: randomId(),
 						leaf: true,
 						// NOTE: this array was mutated above.
 						values: node.values,
 					}
 					this.nodes[leftNode.id] = leftNode
-					const rootNode: BranchNode = {
+					const rootNode: BranchNode<K> = {
 						id: "root",
 						leaf: false,
 						children: [
@@ -162,7 +167,7 @@ export class BinaryPlusTree2<V = any> {
 				}
 
 				// Insert right node into parent.
-				const parent = nodePath.shift() as BranchNode
+				const parent = nodePath.shift() as BranchNode<K>
 				const parentIndex = indexPath.shift()
 				if (!parent) throw new Error("Broken.")
 				if (parentIndex === undefined) throw new Error("Broken.")
@@ -178,7 +183,7 @@ export class BinaryPlusTree2<V = any> {
 
 			// NOTE: this mutates the array!
 			const rightChildren = node.children.splice(splitIndex)
-			const rightNode: BranchNode = {
+			const rightNode: BranchNode<K> = {
 				id: randomId(),
 				children: rightChildren,
 			}
@@ -186,13 +191,13 @@ export class BinaryPlusTree2<V = any> {
 			const rightMinKey = rightNode.children[0].minKey
 
 			if (node.id === "root") {
-				const leftNode: BranchNode = {
+				const leftNode: BranchNode<K> = {
 					id: randomId(),
 					// NOTE: this array was mutated above.
 					children: node.children,
 				}
 				this.nodes[leftNode.id] = leftNode
-				const rootNode: BranchNode = {
+				const rootNode: BranchNode<K> = {
 					id: "root",
 					children: [
 						{ minKey: null, childId: leftNode.id },
@@ -204,7 +209,7 @@ export class BinaryPlusTree2<V = any> {
 			}
 
 			// Insert right node into parent.
-			const parent = nodePath.shift() as BranchNode
+			const parent = nodePath.shift() as BranchNode<K>
 			const parentIndex = indexPath.shift()
 			if (!parent) throw new Error("Broken.")
 			if (parentIndex === undefined) throw new Error("Broken.")
@@ -218,7 +223,7 @@ export class BinaryPlusTree2<V = any> {
 		}
 	}
 
-	delete = (key: Key) => {
+	delete = (key: K) => {
 		const root = this.nodes["root"]
 		if (!root) return
 
@@ -229,13 +234,13 @@ export class BinaryPlusTree2<V = any> {
 			const node = nodePath[0]
 
 			if (node.leaf) {
-				const exists = removeLeaf(node.values, key)
+				const exists = this.leafValues.remove(node.values, key)
 				if (!exists) return // No changes to the tree!
 				break
 			}
 
 			// Recur into the child.
-			const result = searchBranch(node.children, key)
+			const result = this.branchChildren.search(node.children, key)
 			const index =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.children[index].childId
@@ -270,7 +275,7 @@ export class BinaryPlusTree2<V = any> {
 				return
 			}
 
-			const parent = nodePath.shift() as BranchNode
+			const parent = nodePath.shift() as BranchNode<K>
 			const parentIndex = indexPath.shift()
 			if (!parent) throw new Error("Broken.")
 			if (parentIndex === undefined) throw new Error("Broken.")
@@ -284,7 +289,7 @@ export class BinaryPlusTree2<V = any> {
 				// No need to recusively update the left-most branch.
 				if (parentItem.minKey === null) return
 				// No need to recursively update if the minKey didn't change.
-				if (compareKey(parentItem.minKey, minKey) === 0) return
+				if (this.compareBranchKey(parentItem.minKey, minKey) === 0) return
 				// Set the minKey and recur
 				parentItem.minKey = minKey
 				node = parent
