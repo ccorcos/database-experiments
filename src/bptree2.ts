@@ -64,17 +64,20 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 		this.compareBranchKey
 	)
 
-	get = (key: K): V | undefined => {
-		const root = this.nodes["root"]
-		if (!root) return // Empty tree
+	private findPath(key: K): {
+		nodePath: (BranchNode<K> | LeafNode<K, V>)[]
+		indexPath: number[]
+	} {
+		const nodePath: (BranchNode<K> | LeafNode<K, V>)[] = []
+		const indexPath: number[] = []
 
-		let node = root
+		const root = this.nodes["root"]
+		if (!root) return { nodePath, indexPath }
+		else nodePath.push(root)
+
 		while (true) {
-			if (node.leaf) {
-				const result = this.leafValues.search(node.values, key)
-				if (result.found === undefined) return
-				return node.values[result.found].value
-			}
+			const node = nodePath[0]
+			if (node.leaf) return { nodePath, indexPath }
 
 			const result = this.branchChildren.search(node.children, key)
 
@@ -87,15 +90,86 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 			const childId = node.children[childIndex].childId
 			const child = this.nodes[childId]
 			if (!child) throw Error("Missing child node.")
-			node = child
+			nodePath.unshift(child)
+			indexPath.unshift(childIndex)
 		}
 	}
 
-	set = (key: K, value: V) => {
+	get = (key: K): V | undefined => {
+		const { nodePath } = this.findPath(key)
+		if (nodePath.length === 0) return
+
 		const root = this.nodes["root"]
+		if (!root) return // Empty tree
+
+		const leaf = nodePath[0] as LeafNode<K, V>
+		const result = this.leafValues.search(leaf.values, key)
+		if (result.found === undefined) return
+		return leaf.values[result.found].value
+	}
+
+	// list = (args: { start?: K; end?: K; limit?: number; reverse?: boolean }) => {
+	// 	let startKey: K | undefined
+	// 	let endKey: K | undefined
+	// 	if (args.start) {
+	// 		startKey = args.start
+	// 	}
+	// 	if (args.end) {
+	// 		endKey = args.end
+	// 	}
+
+	// 	if (
+	// 		startKey !== undefined &&
+	// 		endKey !== undefined &&
+	// 		this.compareKey(startKey, endKey) > 0
+	// 	) {
+	// 		throw new Error("Invalid bounds.")
+	// 	}
+
+	// 	let startIndex: number = 0
+	// 	let endIndex: number = this.data.length - 1
+
+	// 	if (startKey) {
+	// 		const _start = startKey
+	// 		const result = this.utils.search(this.data, _start)
+	// 		if (result.found === undefined) {
+	// 			startIndex = result.closest
+	// 		} else if (startKey === args.prefix) {
+	// 			startIndex = result.found + 1
+	// 		} else {
+	// 			startIndex = result.found
+	// 		}
+	// 	}
+
+	// 	if (endKey) {
+	// 		const _end = endKey
+	// 		const result = this.utils.search(this.data, _end)
+	// 		if (result.found === undefined) {
+	// 			endIndex = result.closest
+	// 		} else {
+	// 			endIndex = result.found
+	// 		}
+	// 	}
+
+	// 	if (args.reverse) {
+	// 		if (!args.limit) return this.data.slice(startIndex, endIndex).reverse()
+	// 		return this.data
+	// 			.slice(Math.max(startIndex, endIndex - args.limit), endIndex)
+	// 			.reverse()
+	// 	}
+
+	// 	if (!args.limit) return this.data.slice(startIndex, endIndex)
+	// 	return this.data.slice(
+	// 		startIndex,
+	// 		Math.min(startIndex + args.limit, endIndex)
+	// 	)
+	// }
+
+	set = (key: K, value: V) => {
+		const { nodePath, indexPath } = this.findPath(key)
 
 		// Intitalize root node.
-		if (!root) {
+		if (nodePath.length === 0) {
 			this.nodes["root"] = {
 				leaf: true,
 				id: "root",
@@ -105,28 +179,10 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 		}
 
 		// Insert into leaf node.
-		const nodePath = [root]
-		const indexPath: number[] = []
-		while (true) {
-			const node = nodePath[0]
-
-			if (node.leaf) {
-				const existing = this.leafValues.insert(node.values, { key, value })
-				// No need to rebalance if we're replacing
-				if (existing) return
-				break
-			}
-
-			const result = this.branchChildren.search(node.children, key)
-			const index =
-				result.found !== undefined ? result.found : result.closest - 1
-			const childId = node.children[index].childId
-			const child = this.nodes[childId]
-			if (!child) throw Error("Missing child node.")
-			// Recur into child.
-			nodePath.unshift(child)
-			indexPath.unshift(index)
-		}
+		const leaf = nodePath[0] as LeafNode<K, V>
+		const existing = this.leafValues.insert(leaf.values, { key, value })
+		// No need to rebalance if we're replacing an existing item.
+		if (existing) return
 
 		// Balance the tree by splitting nodes, starting from the leaf.
 		let node = nodePath.shift()
