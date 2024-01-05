@@ -32,6 +32,17 @@ function compare(a: any, b: any) {
 	return -1
 }
 
+type NodeCursor<K, V> = {
+	nodePath: (BranchNode<K> | LeafNode<K, V>)[]
+	indexPath: number[]
+}
+
+type ValueCursor<K, V> = {
+	nodePath: (BranchNode<K> | LeafNode<K, V>)[]
+	indexPath: number[]
+	index: number
+}
+
 export class BinaryPlusTree2<K = string | number, V = any> {
 	// In preparation for storing nodes in a key-value database.
 	nodes: { [key: Key]: BranchNode<K> | LeafNode<K, V> | undefined } = {}
@@ -64,10 +75,7 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 		this.compareBranchKey
 	)
 
-	private findPath(key: K): {
-		nodePath: (BranchNode<K> | LeafNode<K, V>)[]
-		indexPath: number[]
-	} {
+	private findPath(key: K): NodeCursor<K, V> {
 		const nodePath: (BranchNode<K> | LeafNode<K, V>)[] = []
 		const indexPath: number[] = []
 
@@ -108,62 +116,173 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 		return leaf.values[result.found].value
 	}
 
-	// list = (args: { start?: K; end?: K; limit?: number; reverse?: boolean }) => {
-	// 	let startKey: K | undefined
-	// 	let endKey: K | undefined
-	// 	if (args.start) {
-	// 		startKey = args.start
-	// 	}
-	// 	if (args.end) {
-	// 		endKey = args.end
-	// 	}
+	private startCursor() {
+		const cursor: ValueCursor<K, V> = {
+			nodePath: [],
+			indexPath: [],
+			index: 0,
+		}
+		const root = this.nodes["root"]
+		if (!root) return cursor
+		cursor.nodePath.push(root)
+		while (true) {
+			const node = cursor.nodePath[0]
+			if (node.leaf) break
+			const childIndex = 0
+			const childId = node.children[childIndex].childId
+			const child = this.nodes[childId]
+			if (!child) throw new Error("Broken.")
+			cursor.nodePath.unshift(child)
+			cursor.indexPath.unshift(childIndex)
+		}
+		return cursor
+	}
 
-	// 	if (
-	// 		startKey !== undefined &&
-	// 		endKey !== undefined &&
-	// 		this.compareKey(startKey, endKey) > 0
-	// 	) {
-	// 		throw new Error("Invalid bounds.")
-	// 	}
+	private nextCursor(cursor: ValueCursor<K, V>): ValueCursor<K, V> | undefined {
+		const leaf = cursor.nodePath[0] as LeafNode<K, V>
+		if (leaf.values.length < cursor.index + 1) {
+			return { ...cursor, index: cursor.index + 1 }
+		}
 
-	// 	let startIndex: number = 0
-	// 	let endIndex: number = this.data.length - 1
+		cursor = {
+			nodePath: [...cursor.nodePath],
+			indexPath: [...cursor.indexPath],
+			index: 0,
+		}
+		for (let i = 0; i < cursor.nodePath.length; i++) {
+			// Find the point in the path where we need to go down a sibling branch.
+			const parent = cursor.nodePath[i + 1] as BranchNode<K>
+			const parentIndex = cursor.indexPath[i]
+			const nextIndex = parentIndex + 1
+			if (nextIndex >= parent.children.length) continue
 
-	// 	if (startKey) {
-	// 		const _start = startKey
-	// 		const result = this.utils.search(this.data, _start)
-	// 		if (result.found === undefined) {
-	// 			startIndex = result.closest
-	// 		} else if (startKey === args.prefix) {
-	// 			startIndex = result.found + 1
-	// 		} else {
-	// 			startIndex = result.found
-	// 		}
-	// 	}
+			// Branch to the sibling.
+			const siblingId = parent.children[nextIndex].childId
+			const sibling = this.nodes[siblingId]
+			if (!sibling) throw new Error("Broken.")
+			cursor.indexPath[i] = nextIndex
+			cursor.nodePath[i] = sibling
 
-	// 	if (endKey) {
-	// 		const _end = endKey
-	// 		const result = this.utils.search(this.data, _end)
-	// 		if (result.found === undefined) {
-	// 			endIndex = result.closest
-	// 		} else {
-	// 			endIndex = result.found
-	// 		}
-	// 	}
+			// Zero out the rest of the path.
+			for (let j = i - 1; j >= 0; j--) {
+				cursor.indexPath[j] = 0
+			}
 
-	// 	if (args.reverse) {
-	// 		if (!args.limit) return this.data.slice(startIndex, endIndex).reverse()
-	// 		return this.data
-	// 			.slice(Math.max(startIndex, endIndex - args.limit), endIndex)
-	// 			.reverse()
-	// 	}
+			// Fetch the nodes for the path.
+			for (let j = i; j >= 1; j++) {
+				const node = cursor.nodePath[j] as BranchNode<K>
+				const childId = node.children[0].childId
+				const child = this.nodes[childId]
+				if (!child) throw new Error("Broken.")
+				cursor.nodePath[j - 1] = child
+			}
 
-	// 	if (!args.limit) return this.data.slice(startIndex, endIndex)
-	// 	return this.data.slice(
-	// 		startIndex,
-	// 		Math.min(startIndex + args.limit, endIndex)
-	// 	)
-	// }
+			return cursor
+		}
+	}
+
+	private endCursor() {
+		const cursor: ValueCursor<K, V> = {
+			nodePath: [],
+			indexPath: [],
+			index: 0,
+		}
+		const root = this.nodes["root"]
+		if (!root) return cursor
+		cursor.nodePath.push(root)
+		while (true) {
+			const node = cursor.nodePath[0]
+			if (node.leaf) {
+				cursor.index = node.values.length - 1
+				break
+			}
+			const childIndex = node.children.length - 1
+			const childId = node.children[childIndex].childId
+			const child = this.nodes[childId]
+			if (!child) throw new Error("Broken.")
+			cursor.nodePath.unshift(child)
+			cursor.indexPath.unshift(childIndex)
+		}
+		return cursor
+	}
+
+	private prevCursor(cursor: ValueCursor<K, V>): ValueCursor<K, V> | undefined {
+		// const leaf = cursor.nodePath[0] as LeafNode<K, V>
+		// if (leaf.values.length < cursor.index + 1) {
+		// 	return { ...cursor, index: cursor.index + 1 }
+		// }
+		// cursor = {
+		// 	nodePath: [...cursor.nodePath],
+		// 	indexPath: [...cursor.indexPath],
+		// 	index: 0,
+		// }
+		// for (let i = 0; i < cursor.nodePath.length; i++) {
+		// 	// Find the point in the path where we need to go down a sibling branch.
+		// 	const parent = cursor.nodePath[i + 1] as BranchNode<K>
+		// 	const parentIndex = cursor.indexPath[i]
+		// 	const nextIndex = parentIndex + 1
+		// 	if (nextIndex >= parent.children.length) continue
+		// 	// Branch to the sibling.
+		// 	const siblingId = parent.children[nextIndex].childId
+		// 	const sibling = this.nodes[siblingId]
+		// 	if (!sibling) throw new Error("Broken.")
+		// 	cursor.indexPath[i] = nextIndex
+		// 	cursor.nodePath[i] = sibling
+		// 	// Zero out the rest of the path.
+		// 	for (let j = i - 1; j >= 0; j--) {
+		// 		cursor.indexPath[j] = 0
+		// 	}
+		// 	// Fetch the nodes for the path.
+		// 	for (let j = i; j >= 1; j++) {
+		// 		const node = cursor.nodePath[j] as BranchNode<K>
+		// 		const childId = node.children[0].childId
+		// 		const child = this.nodes[childId]
+		// 		if (!child) throw new Error("Broken.")
+		// 		cursor.nodePath[j - 1] = child
+		// 	}
+		// 	return cursor
+		// }
+	}
+
+	list = (args: { start?: K; end?: K; limit?: number; reverse?: boolean }) => {
+		if (
+			args.start !== undefined &&
+			args.end !== undefined &&
+			this.compareKey(args.start, args.end) > 0
+		) {
+			throw new Error("Invalid bounds.")
+		}
+
+		let startKey: ValueCursor<K, V> | undefined
+		let endKey: ValueCursor<K, V> | undefined
+		if (args.start) {
+			const cursor = this.findPath(args.start)
+			const leaf = cursor.nodePath[0] as LeafNode<K, V>
+			const result = this.leafValues.search(leaf.values, args.start)
+			const index = result.found !== undefined ? result.found : result.closest
+			startKey = { ...cursor, index }
+		}
+		if (args.end) {
+			const cursor = this.findPath(args.end)
+			const leaf = cursor.nodePath[0] as LeafNode<K, V>
+			const result = this.leafValues.search(leaf.values, args.end)
+			const index = result.found !== undefined ? result.found : result.closest
+			endKey = { ...cursor, index }
+		}
+
+		// if (args.reverse) {
+		// 	if (!args.limit) return this.data.slice(startIndex, endIndex).reverse()
+		// 	return this.data
+		// 		.slice(Math.max(startIndex, endIndex - args.limit), endIndex)
+		// 		.reverse()
+		// }
+
+		// if (!args.limit) return this.data.slice(startIndex, endIndex)
+		// return this.data.slice(
+		// 	startIndex,
+		// 	Math.min(startIndex + args.limit, endIndex)
+		// )
+	}
 
 	set = (key: K, value: V) => {
 		const { nodePath, indexPath } = this.findPath(key)
