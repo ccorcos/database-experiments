@@ -139,11 +139,12 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 	}
 
 	private nextCursor(cursor: NodeCursor<K, V>): NodeCursor<K, V> | undefined {
+		// console.log(cursor)
 		cursor = {
 			nodePath: [...cursor.nodePath],
 			indexPath: [...cursor.indexPath],
 		}
-		for (let i = 0; i < cursor.nodePath.length; i++) {
+		for (let i = 0; i < cursor.nodePath.length - 1; i++) {
 			// Find the point in the path where we need to go down a sibling branch.
 			const parent = cursor.nodePath[i + 1] as BranchNode<K>
 			const parentIndex = cursor.indexPath[i]
@@ -160,8 +161,8 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 				const childId = parent.children[parentIndex].childId
 				const child = this.nodes[childId]
 				if (!child) throw new Error("Broken.")
-				cursor.nodePath[i] = child
-				if (j >= 0) cursor.indexPath[j - 1] = 0
+				cursor.nodePath[j] = child
+				if (j > 0) cursor.indexPath[j - 1] = 0
 			}
 			return cursor
 		}
@@ -209,8 +210,8 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 				const childId = parent.children[parentIndex].childId
 				const child = this.nodes[childId]
 				if (!child) throw new Error("Broken.")
-				cursor.nodePath[i] = child
-				if (j >= 0)
+				cursor.nodePath[j] = child
+				if (j > 0)
 					cursor.indexPath[j - 1] = child.leaf
 						? child.values.length - 1
 						: child.children.length - 1
@@ -282,9 +283,9 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 		}
 
 		let cursor: NodeCursor<K, V> | undefined = startKey
-		while ((cursor = this.nextCursor(startKey))) {
+		while ((cursor = this.nextCursor(cursor))) {
 			const leaf = cursor.nodePath[0] as LeafNode<K, V>
-			console.log(results, leaf.values)
+
 			results.push(...leaf.values)
 
 			// End bound

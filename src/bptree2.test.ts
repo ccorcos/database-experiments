@@ -244,7 +244,7 @@ describe("BinaryPlusTree2", () => {
 		}
 	})
 
-	it.only("list", () => {
+	it("list", () => {
 		const numbers = Array(1000)
 			.fill(0)
 			.map((x, i) => i * 2)
@@ -293,7 +293,6 @@ describe("BinaryPlusTree2", () => {
 		assert.deepEqual(tree.list({ start: 2000 - 4 }), [
 			{ key: 1996, value: 1996 },
 			{ key: 1998, value: 1998 },
-			{ key: 2000, value: 2000 },
 		])
 
 		// Limit.
