@@ -1,4 +1,5 @@
 import { strict as assert } from "assert"
+import { jsonCodec } from "lexicodec"
 import { cloneDeep } from "lodash"
 import { describe, it } from "mocha"
 import { BinaryPlusTree2 } from "./bptree2"
@@ -224,6 +225,23 @@ describe("BinaryPlusTree2", () => {
 			assert.equal(tree.get(number), undefined)
 		}
 		assert.equal(tree.depth(), 1)
+	})
+
+	it("tuple keys", () => {
+		const tree = new BinaryPlusTree2<any[], any>(3, 9, jsonCodec.compare)
+
+		const numbers = randomNumbers(2000)
+		for (const number of numbers) {
+			tree.set(["user", number], { id: number })
+			tree.set(["profile", number], number)
+			assert.deepEqual(tree.get(["user", number]), { id: number })
+			assert.deepEqual(tree.get(["profile", number]), number)
+		}
+
+		for (const number of numbers) {
+			tree.delete(["user", number])
+			assert.equal(tree.get(["user", number]), undefined)
+		}
 	})
 
 	function propertyTest(args: {
