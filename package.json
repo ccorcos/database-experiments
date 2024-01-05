@@ -26,7 +26,7 @@
 	},
 	"dependencies": {
 		"@ccorcos/lock": "^1.0.3",
-		"@ccorcos/ordered-array": "^0.0.3",
+		"@ccorcos/ordered-array": "^0.0.4",
 		"lexicodec": "^0.0.4",
 		"lodash": "^4.17.21",
 		"ulid": "^2.3.0"

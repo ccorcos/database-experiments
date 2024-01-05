@@ -233,6 +233,14 @@ The most common usecase for an interval tree is for date range queries, e.g. "ge
 The concept isn't all that complicated though... We have a tree sorted by start, and propagate the maxEnd for the node all the way up the tree.
 
 
+cmu 15-826
+https://www.cs.cmu.edu/~christos/courses/826.F19/FOILS-pdf/130_SAMs_Rtrees.pdf
+
+HERE
+- Lets start with a simpler example. Let's make count a fast operation.
+- Then lets work on interval.
+- From there, we cna probably generalize.
+
 
 
 
