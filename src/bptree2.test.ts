@@ -244,6 +244,67 @@ describe("BinaryPlusTree2", () => {
 		}
 	})
 
+	it.only("list", () => {
+		const numbers = Array(1000)
+			.fill(0)
+			.map((x, i) => i * 2)
+		const tree = new BinaryPlusTree2(3, 9)
+		for (const number of numbers) {
+			tree.set(number, number)
+		}
+
+		// No start bound
+		assert.deepEqual(tree.list({ end: 9 }), [
+			{ key: 0, value: 0 },
+			{ key: 2, value: 2 },
+			{ key: 4, value: 4 },
+			{ key: 6, value: 6 },
+			{ key: 8, value: 8 },
+		])
+
+		// Within the same branch.
+		assert.deepEqual(tree.list({ start: 3, end: 9 }), [
+			{ key: 4, value: 4 },
+			{ key: 6, value: 6 },
+			{ key: 8, value: 8 },
+		])
+
+		assert.deepEqual(tree.list({ start: 4, end: 10 }), [
+			{ key: 4, value: 4 },
+			{ key: 6, value: 6 },
+			{ key: 8, value: 8 },
+		])
+
+		// Across branches.
+		assert.deepEqual(tree.list({ start: 4, end: 24 }), [
+			{ key: 4, value: 4 },
+			{ key: 6, value: 6 },
+			{ key: 8, value: 8 },
+			{ key: 10, value: 10 },
+			{ key: 12, value: 12 },
+			{ key: 14, value: 14 },
+			{ key: 16, value: 16 },
+			{ key: 18, value: 18 },
+			{ key: 20, value: 20 },
+			{ key: 22, value: 22 },
+		])
+
+		// No end bound.
+		assert.deepEqual(tree.list({ start: 2000 - 4 }), [
+			{ key: 1996, value: 1996 },
+			{ key: 1998, value: 1998 },
+			{ key: 2000, value: 2000 },
+		])
+
+		// Limit.
+		assert.deepEqual(tree.list({ start: 4, end: 24, limit: 4 }), [
+			{ key: 4, value: 4 },
+			{ key: 6, value: 6 },
+			{ key: 8, value: 8 },
+			{ key: 10, value: 10 },
+		])
+	})
+
 	function propertyTest(args: {
 		minSize: number
 		maxSize: number
