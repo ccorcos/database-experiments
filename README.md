@@ -234,9 +234,11 @@ The goal here is to get on our way to an interval tree...
 
 The goal in some sense is to try to generalize this tree logic so that we can include an arbitrary aggregation function. To start, we're just going to hardcode a `count` which will keep track of how many elements are in a specific subtree. This will give us fast indexed aggregations.
 
-Using GiST (generalized search tree) as an inspiration, we'll see if we can generalize from there.
+Eventually, using GiST (generalized search tree) as an inspiration, we'll see if we can generalize from there.
 
+## B+ Aggregation Tree (bptree-agg.ts)
 
+This is a generalization of the count tree, using a reducer to essentially index aggregation queries.
 
 
 
