@@ -220,6 +220,32 @@ A couple missing features for out B+ trees.
 - [ ] list querying
 - [ ] batch writes
 
+## B+ Tree Improved (bptree2.ts)
+
+I added better types with more semantically meaningful types for BranchNode and LeafNode, e.g. minKey for BranchNode instead of just key.
+
+Keys can now have arbitrary types so long as you pass a comparator. That means you can use `jsonCodec.compare` to have tuples as keys.
+
+I also added `list` query functionality.
+
+The goal here is to get on our way to an interval tree...
+
+## B+ Count Tree (bptree-count.ts)
+
+The goal in some sense is to try to generalize this tree logic so that we can include an arbitrary aggregation function. To start, we're just going to hardcode a `count` which will keep track of how many elements are in a specific subtree. This will give us fast indexed aggregations.
+
+Using GiST (generalized search tree) as an inspiration, we'll see if we can generalize from there.
+
+
+
+
+
+HERE
+
+
+
+
+
 ## Interval B+ Tree (itree.ts)
 
 There is a subtle difference between a [Segment Tree](ttps://www.dgp.toronto.edu/public_user/JamesStewart/378notes/22intervals/) and an [Interval Tree](https://en.wikipedia.org/wiki/Interval_tree). I find that in reality, they are often conflated with each other.
