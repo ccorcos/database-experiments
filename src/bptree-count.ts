@@ -1,28 +1,28 @@
 /*
 
-- better types.
-- tuple keys
-- list query
----
 - count aggregation
+---
 - generalize to GiST
 - interval range query
 
 */
 
 import { orderedArray } from "@ccorcos/ordered-array"
+import { sum } from "lodash"
 
 type Key = string | number
 
 export type BranchNode<K> = {
 	leaf?: false
 	id: string
-	children: { minKey: K | null; childId: string }[]
+	count: number
+	children: { minKey: K | null; count: number; childId: string }[]
 }
 
 export type LeafNode<K, V> = {
 	leaf: true
 	id: string
+	count: number
 	values: { key: K; value: V }[]
 }
 
@@ -37,7 +37,11 @@ type NodeCursor<K, V> = {
 	indexPath: number[]
 }
 
-export class BinaryPlusTree2<K = string | number, V = any> {
+function sumChildrenCount<K>(children: BranchNode<K>["children"]) {
+	return sum(children.map(({ count }) => count))
+}
+
+export class BinaryPlusCountTree<K = string | number, V = any> {
 	// In preparation for storing nodes in a key-value database.
 	nodes: { [key: Key]: BranchNode<K> | LeafNode<K, V> | undefined } = {}
 
@@ -325,6 +329,75 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 		// )
 	}
 
+	count = (args: { start?: K; end?: K }) => {
+		if (
+			args.start !== undefined &&
+			args.end !== undefined &&
+			this.compareKey(args.start, args.end) >= 0
+		) {
+			throw new Error("Invalid bounds.")
+		}
+
+		let startKey: NodeCursor<K, V> | undefined
+		let endKey: NodeCursor<K, V> | undefined
+		if (args.start) {
+			startKey = this.findPath(args.start)
+		} else {
+			startKey = this.startCursor()
+		}
+		if (args.end) {
+			endKey = this.findPath(args.end)
+		} else {
+			endKey = this.endCursor()
+		}
+
+		let count = 0
+
+		const startLeaf = startKey.nodePath[0] as LeafNode<K, V>
+		if (args.start) {
+			const result = this.leafValues.search(startLeaf.values, args.start)
+			const index = result.found !== undefined ? result.found : result.closest
+			const startOffset = -1 * index
+			count += startOffset
+		}
+
+		const endLeaf = endKey.nodePath[0] as LeafNode<K, V>
+		if (args.end) {
+			const result = this.leafValues.search(endLeaf.values, args.end)
+			const index = result.found !== undefined ? result.found : result.closest
+			const endOffset = index - endLeaf.count
+			count += endOffset
+		}
+
+		for (let i = startKey.nodePath.length - 1; i >= 0; i--) {
+			if (i === 0) {
+				// LeafNode
+				const startLeaf = startKey.nodePath[i] as LeafNode<K, V>
+				const endLeaf = endKey.nodePath[i] as LeafNode<K, V>
+				if (startLeaf.id !== endLeaf.id)
+					throw new Error("Leaves shouldn't diverge here.")
+				count += startLeaf.count
+				break
+			}
+
+			// BranchNode
+			const startBranch = startKey.nodePath[i] as BranchNode<K>
+			const endBranch = endKey.nodePath[i] as BranchNode<K>
+			const startIndex = startKey.indexPath[i - 1]
+			const endIndex = endKey.indexPath[i - 1]
+
+			if (startBranch.id !== endBranch.id)
+				throw new Error("Branches shouldn't diverge here.")
+			if (startIndex === endIndex) continue
+
+			const subtreeCount = sumChildrenCount(
+				startBranch.children.slice(startIndex, endIndex + 1)
+			)
+			count += subtreeCount
+			return count
+		}
+	}
+
 	set = (key: K, value: V) => {
 		const { nodePath, indexPath } = this.findPath(key)
 
@@ -333,6 +406,7 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 			this.nodes["root"] = {
 				leaf: true,
 				id: "root",
+				count: 1,
 				values: [{ key, value }],
 			}
 			return
@@ -343,6 +417,8 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 		const existing = this.leafValues.insert(leaf.values, { key, value })
 		// No need to rebalance if we're replacing an existing item.
 		if (existing) return
+
+		leaf.count += 1
 
 		// Balance the tree by splitting nodes, starting from the leaf.
 		let node = nodePath.shift()
@@ -357,6 +433,7 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 				const rightNode: LeafNode<K, V> = {
 					id: randomId(),
 					leaf: true,
+					count: rightValues.length,
 					values: rightValues,
 				}
 				this.nodes[rightNode.id] = rightNode
@@ -368,15 +445,21 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 						leaf: true,
 						// NOTE: this array was mutated above.
 						values: node.values,
+						count: node.values.length,
 					}
 					this.nodes[leftNode.id] = leftNode
 					const rootNode: BranchNode<K> = {
 						id: "root",
 						leaf: false,
 						children: [
-							{ minKey: null, childId: leftNode.id },
-							{ minKey: rightMinKey, childId: rightNode.id },
+							{ minKey: null, childId: leftNode.id, count: leftNode.count },
+							{
+								minKey: rightMinKey,
+								childId: rightNode.id,
+								count: rightNode.count,
+							},
 						],
+						count: leftNode.count + rightNode.count,
 					}
 					this.nodes["root"] = rootNode
 					break
@@ -389,8 +472,10 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 				if (parentIndex === undefined) throw new Error("Broken.")
 				parent.children.splice(parentIndex + 1, 0, {
 					minKey: rightMinKey,
+					count: rightNode.count,
 					childId: rightNode.id,
 				})
+				parent.count += 1
 
 				// Recur
 				node = parent
@@ -402,6 +487,7 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 			const rightNode: BranchNode<K> = {
 				id: randomId(),
 				children: rightChildren,
+				count: sumChildrenCount(rightChildren),
 			}
 			this.nodes[rightNode.id] = rightNode
 			const rightMinKey = rightNode.children[0].minKey
@@ -411,14 +497,20 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 					id: randomId(),
 					// NOTE: this array was mutated above.
 					children: node.children,
+					count: sumChildrenCount(node.children),
 				}
 				this.nodes[leftNode.id] = leftNode
 				const rootNode: BranchNode<K> = {
 					id: "root",
 					children: [
-						{ minKey: null, childId: leftNode.id },
-						{ minKey: rightMinKey, childId: rightNode.id },
+						{ minKey: null, childId: leftNode.id, count: leftNode.count },
+						{
+							minKey: rightMinKey,
+							childId: rightNode.id,
+							count: rightNode.count,
+						},
 					],
+					count: leftNode.count + rightNode.count,
 				}
 				this.nodes["root"] = rootNode
 				break
@@ -432,7 +524,9 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 			parent.children.splice(parentIndex + 1, 0, {
 				minKey: rightMinKey,
 				childId: rightNode.id,
+				count: rightNode.count,
 			})
+			parent.count += 1
 
 			// Recur
 			node = parent
@@ -469,6 +563,12 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 		// Merge or redistribute to maintain minSize.
 		let node = nodePath.shift()
 		while (node) {
+			if (node.leaf) {
+				node.count = node.values.length
+			} else {
+				node.count = sumChildrenCount(node.children)
+			}
+
 			if (node.id === "root") {
 				// A root leaf node has no minSize constaint.
 				if (node.leaf) return
@@ -499,15 +599,33 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 			const size = node.leaf ? node.values.length : node.children.length
 			const minKey = node.leaf ? node.values[0].key : node.children[0].minKey
 
+			let countUpdated = false
+			const parentCount = parent.children[parentIndex].count
+			if (parentCount !== node.count) {
+				countUpdated = true
+				parent.children[parentIndex].count = node.count
+			}
+
 			// No need to merge but we might need to update the minKey in the parent
+			let minKeyUpdated = false
 			if (size >= this.minSize) {
 				const parentItem = parent.children[parentIndex]
 				// No need to recusively update the left-most branch.
-				if (parentItem.minKey === null) return
 				// No need to recursively update if the minKey didn't change.
-				if (this.compareBranchKey(parentItem.minKey, minKey) === 0) return
-				// Set the minKey and recur
-				parentItem.minKey = minKey
+				if (
+					parentItem.minKey !== null &&
+					this.compareBranchKey(parentItem.minKey, minKey) !== 0
+				) {
+					// Set the minKey
+					minKeyUpdated = true
+					parentItem.minKey = minKey
+				}
+
+				if (!minKeyUpdated && !countUpdated) {
+					return
+				}
+
+				// Recur
 				node = parent
 				continue
 			}
@@ -527,6 +645,10 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 						// NOTE: this mutates the array!
 						const moveLeft = rightSibling.values.splice(0, splitIndex)
 						node.values.push(...moveLeft)
+
+						node.count = node.values.length
+						rightSibling.count = rightSibling.values.length
+
 						// Update parent minKey.
 						if (parent.children[parentIndex].minKey !== null) {
 							const leftMinKey = node.values[0].key
@@ -535,6 +657,10 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 						const rightMinKey = rightSibling.values[0].key
 						parent.children[parentIndex + 1].minKey = rightMinKey
 
+						// Update parent count
+						parent.children[parentIndex].count = node.count
+						parent.children[parentIndex + 1].count = rightSibling.count
+
 						// Recur
 						node = parent
 						continue
@@ -542,6 +668,8 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 
 					// Merge leaves.
 					node.values.push(...rightSibling.values)
+					node.count = node.values.length
+
 					// Delete rightSibling
 					parent.children.splice(1, 1)
 					delete this.nodes[rightSibling.id]
@@ -549,6 +677,8 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 					const leftMost = parent.children[0].minKey === null
 					const minKey = leftMost ? null : node.values[0].key
 					parent.children[0].minKey = minKey
+					// Update parent count
+					parent.children[0].count = node.count
 
 					// Recur
 					node = parent
@@ -568,8 +698,14 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 					const moveRight = leftSibling.values.splice(splitIndex, this.maxSize)
 					node.values.unshift(...moveRight)
 
+					leftSibling.count = leftSibling.values.length
+					node.count = node.values.length
+
 					// Update parent minKey.
 					parent.children[parentIndex].minKey = node.values[0].key
+
+					parent.children[parentIndex].count = node.count
+					parent.children[parentIndex - 1].count = leftSibling.count
 
 					// Recur
 					node = parent
@@ -578,10 +714,14 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 
 				// Merge leaf.
 				leftSibling.values.push(...node.values)
+				leftSibling.count = leftSibling.values.length
+
 				// Delete the node
 				parent.children.splice(parentIndex, 1)
 				delete this.nodes[node.id]
 				// No need to update minKey because we added to the right.
+
+				parent.children[parentIndex - 1].count = leftSibling.count
 
 				// Recur
 				node = parent
@@ -602,6 +742,10 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 					// NOTE: this mutates the array!
 					const moveLeft = rightSibling.children.splice(0, splitIndex)
 					node.children.push(...moveLeft)
+
+					rightSibling.count = sumChildrenCount(rightSibling.children)
+					node.count = sumChildrenCount(node.children)
+
 					// Update parent minKey.
 					if (parent.children[parentIndex].minKey !== null) {
 						const leftMinKey = node.children[0].minKey
@@ -610,6 +754,10 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 					const rightMinKey = rightSibling.children[0].minKey
 					parent.children[parentIndex + 1].minKey = rightMinKey
 
+					// Update parent count
+					parent.children[parentIndex].count = node.count
+					parent.children[parentIndex + 1].count = rightSibling.count
+
 					// Recur
 					node = parent
 					continue
@@ -617,13 +765,18 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 
 				// Merge leaves.
 				node.children.push(...rightSibling.children)
+				node.count = sumChildrenCount(node.children)
+
 				// Delete rightSibling
 				parent.children.splice(1, 1)
 				delete this.nodes[rightSibling.id]
+
 				// Update parent minKey
 				const leftMost = parent.children[0].minKey === null
 				const minKey = leftMost ? null : node.children[0].minKey
 				parent.children[0].minKey = minKey
+
+				parent.children[0].count = node.count
 
 				// Recur
 				node = parent
@@ -643,8 +796,14 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 				const moveRight = leftSibling.children.splice(splitIndex, this.maxSize)
 				node.children.unshift(...moveRight)
 
+				leftSibling.count = sumChildrenCount(leftSibling.children)
+				node.count = sumChildrenCount(node.children)
+
 				// Update parent minKey.
 				parent.children[parentIndex].minKey = node.children[0].minKey
+
+				parent.children[parentIndex].count = node.count
+				parent.children[parentIndex - 1].count = leftSibling.count
 
 				// Recur
 				node = parent
@@ -653,10 +812,14 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 
 			// Merge leaf.
 			leftSibling.children.push(...node.children)
+			leftSibling.count = sumChildrenCount(leftSibling.children)
+
 			// Delete the node
 			parent.children.splice(parentIndex, 1)
 			delete this.nodes[node.id]
 			// No need to update minKey because we added to the right.
+
+			parent.children[parentIndex - 1].count = leftSibling.count
 
 			// Recur
 			node = parent
