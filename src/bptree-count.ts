@@ -357,16 +357,18 @@ export class BinaryPlusCountTree<K = string | number, V = any> {
 		if (args.start) {
 			const result = this.leafValues.search(startLeaf.values, args.start)
 			const index = result.found !== undefined ? result.found : result.closest
-			const startOffset = -1 * index
-			count += startOffset
+			const startOffset = index
+			count -= startOffset
+			// console.log("startOffset", startOffset)
 		}
 
 		const endLeaf = endKey.nodePath[0] as LeafNode<K, V>
 		if (args.end) {
 			const result = this.leafValues.search(endLeaf.values, args.end)
 			const index = result.found !== undefined ? result.found : result.closest
-			const endOffset = index - endLeaf.count
-			count += endOffset
+			const endOffset = endLeaf.count - index
+			count -= endOffset
+			// console.log("endOffset", endOffset)
 		}
 
 		for (let i = startKey.nodePath.length - 1; i >= 0; i--) {
@@ -377,6 +379,8 @@ export class BinaryPlusCountTree<K = string | number, V = any> {
 				if (startLeaf.id !== endLeaf.id)
 					throw new Error("Leaves shouldn't diverge here.")
 				count += startLeaf.count
+
+				// console.log("Leaf", startLeaf.count)
 				break
 			}
 
@@ -390,12 +394,20 @@ export class BinaryPlusCountTree<K = string | number, V = any> {
 				throw new Error("Branches shouldn't diverge here.")
 			if (startIndex === endIndex) continue
 
+			// console.log(
+			// 	"Branch",
+			// 	startIndex,
+			// 	endIndex,
+			// 	startBranch.children.map((child) => child.count)
+			// )
+
 			const subtreeCount = sumChildrenCount(
 				startBranch.children.slice(startIndex, endIndex + 1)
 			)
 			count += subtreeCount
-			return count
+			break
 		}
+		return count
 	}
 
 	set = (key: K, value: V) => {
@@ -414,17 +426,42 @@ export class BinaryPlusCountTree<K = string | number, V = any> {
 
 		// Insert into leaf node.
 		const leaf = nodePath[0] as LeafNode<K, V>
-		const existing = this.leafValues.insert(leaf.values, { key, value })
-		// No need to rebalance if we're replacing an existing item.
-		if (existing) return
+		this.leafValues.insert(leaf.values, { key, value })
 
-		leaf.count += 1
+		// // Update parent counts.
+		// for (let i = 0; i < nodePath.length; i++) {
+		// 	const node = nodePath[0]
+		// 	if (node.leaf) node.count = node.values.length
+		// 	else node.count = sumChildrenCount(node.children)
 
-		// Balance the tree by splitting nodes, starting from the leaf.
+		// 	if (i === nodePath.length - 1) break
+		// 	const parent = nodePath[i + 1] as BranchNode<K>
+		// 	const parentIndex = indexPath[i]
+		// 	parent.children[parentIndex].count = node.count
+		// }
+
 		let node = nodePath.shift()
 		while (node) {
 			const size = node.leaf ? node.values.length : node.children.length
-			if (size <= this.maxSize) break
+
+			if (size <= this.maxSize) {
+				// No splitting, update count.
+				if (node.leaf) node.count = node.values.length
+				else node.count = sumChildrenCount(node.children)
+
+				// We're at the root.
+				if (nodePath.length === 0) break
+
+				// Still need to update the parent counts.
+				const parent = nodePath.shift() as BranchNode<K>
+				const parentIndex = indexPath.shift()!
+				parent.children[parentIndex].count = node.count
+				// Recur
+				node = parent
+				continue
+			}
+
+			// Split and update count.
 			const splitIndex = Math.round(size / 2)
 
 			if (node.leaf) {
@@ -437,7 +474,7 @@ export class BinaryPlusCountTree<K = string | number, V = any> {
 					values: rightValues,
 				}
 				this.nodes[rightNode.id] = rightNode
-				const rightMinKey = rightNode.values[0].key
+				node.count = node.values.length
 
 				if (node.id === "root") {
 					const leftNode: LeafNode<K, V> = {
@@ -445,7 +482,7 @@ export class BinaryPlusCountTree<K = string | number, V = any> {
 						leaf: true,
 						// NOTE: this array was mutated above.
 						values: node.values,
-						count: node.values.length,
+						count: node.count,
 					}
 					this.nodes[leftNode.id] = leftNode
 					const rootNode: BranchNode<K> = {
@@ -454,7 +491,7 @@ export class BinaryPlusCountTree<K = string | number, V = any> {
 						children: [
 							{ minKey: null, childId: leftNode.id, count: leftNode.count },
 							{
-								minKey: rightMinKey,
+								minKey: rightNode.values[0].key,
 								childId: rightNode.id,
 								count: rightNode.count,
 							},
@@ -467,15 +504,14 @@ export class BinaryPlusCountTree<K = string | number, V = any> {
 
 				// Insert right node into parent.
 				const parent = nodePath.shift() as BranchNode<K>
-				const parentIndex = indexPath.shift()
-				if (!parent) throw new Error("Broken.")
-				if (parentIndex === undefined) throw new Error("Broken.")
+				const parentIndex = indexPath.shift()!
 				parent.children.splice(parentIndex + 1, 0, {
-					minKey: rightMinKey,
+					minKey: rightNode.values[0].key,
 					count: rightNode.count,
 					childId: rightNode.id,
 				})
-				parent.count += 1
+				// Update parent count.
+				parent.children[parentIndex].count = node.count
 
 				// Recur
 				node = parent
@@ -490,14 +526,14 @@ export class BinaryPlusCountTree<K = string | number, V = any> {
 				count: sumChildrenCount(rightChildren),
 			}
 			this.nodes[rightNode.id] = rightNode
-			const rightMinKey = rightNode.children[0].minKey
+			node.count = sumChildrenCount(node.children)
 
 			if (node.id === "root") {
 				const leftNode: BranchNode<K> = {
 					id: randomId(),
 					// NOTE: this array was mutated above.
 					children: node.children,
-					count: sumChildrenCount(node.children),
+					count: node.count,
 				}
 				this.nodes[leftNode.id] = leftNode
 				const rootNode: BranchNode<K> = {
@@ -505,7 +541,7 @@ export class BinaryPlusCountTree<K = string | number, V = any> {
 					children: [
 						{ minKey: null, childId: leftNode.id, count: leftNode.count },
 						{
-							minKey: rightMinKey,
+							minKey: rightNode.children[0].minKey,
 							childId: rightNode.id,
 							count: rightNode.count,
 						},
@@ -518,15 +554,14 @@ export class BinaryPlusCountTree<K = string | number, V = any> {
 
 			// Insert right node into parent.
 			const parent = nodePath.shift() as BranchNode<K>
-			const parentIndex = indexPath.shift()
-			if (!parent) throw new Error("Broken.")
-			if (parentIndex === undefined) throw new Error("Broken.")
+			const parentIndex = indexPath.shift()!
 			parent.children.splice(parentIndex + 1, 0, {
-				minKey: rightMinKey,
+				minKey: rightNode.children[0].minKey,
 				childId: rightNode.id,
 				count: rightNode.count,
 			})
-			parent.count += 1
+			// Update parent count.
+			parent.children[parentIndex].count = node.count
 
 			// Recur
 			node = parent

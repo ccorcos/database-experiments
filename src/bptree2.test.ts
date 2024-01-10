@@ -253,6 +253,12 @@ describe("BinaryPlusTree2", () => {
 			tree.set(number, number)
 		}
 
+		// Entire thing
+		assert.deepEqual(
+			tree.list({}),
+			numbers.map((n) => ({ key: n, value: n }))
+		)
+
 		// No start bound
 		assert.deepEqual(tree.list({ end: 9 }), [
 			{ key: 0, value: 0 },
@@ -471,6 +477,8 @@ function test(tree: BinaryPlusTree2, str: string) {
 			assert.equal(tree.get(test.n), value, test.comment)
 
 			assert.equal(tree.depth(), test.tree.split("\n").length, test.comment)
+
+			verify(tree)
 		})
 	}
 }

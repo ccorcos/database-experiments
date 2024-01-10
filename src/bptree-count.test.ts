@@ -253,6 +253,12 @@ describe("BinaryPlusCountTree", () => {
 			tree.set(number, number)
 		}
 
+		// Entire thing
+		assert.deepEqual(
+			tree.list({}),
+			numbers.map((n) => ({ key: n, value: n }))
+		)
+
 		// No start bound
 		assert.deepEqual(tree.list({ end: 9 }), [
 			{ key: 0, value: 0 },
@@ -358,6 +364,132 @@ describe("BinaryPlusCountTree", () => {
 		}
 	})
 
+	it("count", function () {
+		this.timeout(20_000)
+		const numbers = Array(1000)
+			.fill(0)
+			.map((x, i) => i * 2)
+		const tree = new BinaryPlusCountTree(3, 9)
+		for (const number of numbers) {
+			tree.set(number, number)
+			verifyCount(tree)
+		}
+
+		// Entire thing
+		assert.deepEqual(tree.count({}), numbers.length)
+
+		// No start bound
+		assert.deepEqual(
+			tree.count({ end: 9 }),
+			[
+				{ key: 0, value: 0 },
+				{ key: 2, value: 2 },
+				{ key: 4, value: 4 },
+				{ key: 6, value: 6 },
+				{ key: 8, value: 8 },
+			].length
+		)
+
+		// Within the same branch.
+		assert.deepEqual(
+			tree.count({ start: 3, end: 9 }),
+			[
+				{ key: 4, value: 4 },
+				{ key: 6, value: 6 },
+				{ key: 8, value: 8 },
+			].length
+		)
+
+		assert.deepEqual(
+			tree.count({ start: 4, end: 10 }),
+			[
+				{ key: 4, value: 4 },
+				{ key: 6, value: 6 },
+				{ key: 8, value: 8 },
+			].length
+		)
+
+		// Across branches.
+		assert.deepEqual(
+			tree.count({ start: 4, end: 24 }),
+			[
+				{ key: 4, value: 4 },
+				{ key: 6, value: 6 },
+				{ key: 8, value: 8 },
+				{ key: 10, value: 10 },
+				{ key: 12, value: 12 },
+				{ key: 14, value: 14 },
+				{ key: 16, value: 16 },
+				{ key: 18, value: 18 },
+				{ key: 20, value: 20 },
+				{ key: 22, value: 22 },
+			].length
+		)
+
+		// No end bound.
+		assert.deepEqual(
+			tree.count({ start: 2000 - 4 }),
+			[
+				{ key: 1996, value: 1996 },
+				{ key: 1998, value: 1998 },
+			].length
+		)
+	})
+
+	it("count property test", () => {
+		const randomTuples = (
+			n: number,
+			len: number,
+			range: [number, number] = [-10, 10]
+		) =>
+			Array(n)
+				.fill(0)
+				.map(() => randomNumbers(len, range))
+
+		let tuples = [
+			...randomTuples(10, 1),
+			...randomTuples(50, 2),
+			...randomTuples(100, 3),
+			...randomTuples(500, 4),
+			...randomTuples(1000, 5),
+		]
+
+		tuples = uniqWith(tuples, (a, b) => jsonCodec.compare(a, b) === 0)
+		tuples.sort(jsonCodec.compare)
+
+		const tree = new BinaryPlusCountTree(3, 9, jsonCodec.compare)
+		for (const tuple of tuples) {
+			tree.set(tuple, sum(tuple))
+		}
+
+		const ranges = randomTuples(10_000, 2, [0, tuples.length - 1])
+			.map((range) => {
+				range.sort(jsonCodec.compare)
+				return range
+			})
+			// Ignore ranges where start and end are the same.
+			.filter(([a, b]) => a !== b)
+
+		for (const tuple of tuples) {
+			const result = tree.get(tuple)
+			assert.deepEqual(result, sum(tuple))
+		}
+
+		for (const range of ranges) {
+			const start = tuples[range[0]]
+			const end = tuples[range[1]]
+			const result = tree.list({ start, end }).map(({ key }) => key)
+			const target = tuples.slice(range[0], range[1])
+			assert.deepEqual(
+				result,
+				target,
+				`range: [${range[0]},	${range[1]}] start: ${JSON.stringify(
+					start
+				)} end: ${JSON.stringify(end)}`
+			)
+		}
+	})
+
 	function propertyTest(args: {
 		minSize: number
 		maxSize: number
@@ -373,6 +505,7 @@ describe("BinaryPlusCountTree", () => {
 				// it(`+ ${n}`, () => {
 				tree.set(n, n.toString())
 				verify(tree)
+				verifyCount(tree)
 
 				// Get works on every key so far.
 				for (let j = 0; j <= i; j++) {
@@ -389,6 +522,7 @@ describe("BinaryPlusCountTree", () => {
 					const t = clone(tree)
 					t.set(x, x * 2)
 					verify(t)
+					verifyCount(t)
 
 					// Check get on all keys.
 					for (let k = 0; k <= i; k++) {
@@ -408,6 +542,7 @@ describe("BinaryPlusCountTree", () => {
 					t.delete(x)
 					try {
 						verify(t)
+						verifyCount(t)
 					} catch (error) {
 						console.log("BEFORE", inspect(tree))
 						console.log("DELETE", x)
@@ -465,6 +600,9 @@ function test(tree: BinaryPlusCountTree, str: string) {
 		it(label, () => {
 			if (test.op === "+") tree.set(test.n, test.n.toString())
 			if (test.op === "-") tree.delete(test.n)
+			verify(tree)
+			verifyCount(tree)
+
 			assert.equal(inspect(tree), test.tree, test.comment)
 
 			const value = test.op === "+" ? test.n.toString() : undefined
@@ -556,6 +694,39 @@ function verify(tree: BinaryPlusCountTree, id = "root") {
 
 	if (node.leaf) return
 	for (const { childId } of node.children) verify(tree, childId)
+}
+
+/** Check for node sizes. */
+function verifyCount(tree: BinaryPlusCountTree, id = "root"): number {
+	const node = tree.nodes[id]
+	if (!node) return 0
+
+	if (node.leaf) {
+		assert.equal(node.count, node.values.length, "leaf count")
+		return node.count
+	}
+
+	let branchCount = 0
+	for (const child of node.children) {
+		const childCount = verifyCount(tree, child.childId)
+		assert.equal(
+			child.count,
+			childCount,
+			[
+				"child count",
+				"minKeys",
+				JSON.stringify(node.children.map((child) => child.minKey)),
+				"item.count",
+				child.count,
+				"node count",
+				childCount,
+				"tree",
+				inspect(tree),
+			].join("\n")
+		)
+		branchCount += child.count
+	}
+	return branchCount
 }
 
 function countNodes(tree: BinaryPlusCountTree, id = "root") {
