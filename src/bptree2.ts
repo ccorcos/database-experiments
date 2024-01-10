@@ -220,6 +220,9 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 		}
 	}
 
+	// HERE
+	// - reverse arg
+	// - rigorous property testing.
 	list = (args: {
 		start?: K
 		end?: K
@@ -229,7 +232,7 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 		if (
 			args.start !== undefined &&
 			args.end !== undefined &&
-			this.compareKey(args.start, args.end) > 0
+			this.compareKey(args.start, args.end) >= 0
 		) {
 			throw new Error("Invalid bounds.")
 		}

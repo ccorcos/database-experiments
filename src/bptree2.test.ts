@@ -1,6 +1,6 @@
 import { strict as assert } from "assert"
 import { jsonCodec } from "lexicodec"
-import { cloneDeep } from "lodash"
+import { cloneDeep, sum, uniqWith } from "lodash"
 import { describe, it } from "mocha"
 import { BinaryPlusTree2 } from "./bptree2"
 
@@ -304,6 +304,60 @@ describe("BinaryPlusTree2", () => {
 		])
 	})
 
+	it("list property test", () => {
+		const randomTuples = (
+			n: number,
+			len: number,
+			range: [number, number] = [-10, 10]
+		) =>
+			Array(n)
+				.fill(0)
+				.map(() => randomNumbers(len, range))
+
+		let tuples = [
+			...randomTuples(10, 1),
+			...randomTuples(50, 2),
+			...randomTuples(100, 3),
+			...randomTuples(500, 4),
+			...randomTuples(1000, 5),
+		]
+
+		tuples = uniqWith(tuples, (a, b) => jsonCodec.compare(a, b) === 0)
+		tuples.sort(jsonCodec.compare)
+
+		const tree = new BinaryPlusTree2(3, 9, jsonCodec.compare)
+		for (const tuple of tuples) {
+			tree.set(tuple, sum(tuple))
+		}
+
+		const ranges = randomTuples(10_000, 2, [0, tuples.length - 1])
+			.map((range) => {
+				range.sort(jsonCodec.compare)
+				return range
+			})
+			// Ignore ranges where start and end are the same.
+			.filter(([a, b]) => a !== b)
+
+		for (const tuple of tuples) {
+			const result = tree.get(tuple)
+			assert.deepEqual(result, sum(tuple))
+		}
+
+		for (const range of ranges) {
+			const start = tuples[range[0]]
+			const end = tuples[range[1]]
+			const result = tree.list({ start, end }).map(({ key }) => key)
+			const target = tuples.slice(range[0], range[1])
+			assert.deepEqual(
+				result,
+				target,
+				`range: [${range[0]},	${range[1]}] start: ${JSON.stringify(
+					start
+				)} end: ${JSON.stringify(end)}`
+			)
+		}
+	})
+
 	function propertyTest(args: {
 		minSize: number
 		maxSize: number
@@ -374,10 +428,11 @@ describe("BinaryPlusTree2", () => {
 	}
 })
 
-function randomNumbers(size: number) {
+function randomNumbers(size: number, range?: [number, number]) {
+	if (!range) range = [-size * 10, size * 10]
 	const numbers: number[] = []
 	for (let i = 0; i < size; i++)
-		numbers.push(Math.round((Math.random() - 0.5) * size * 10))
+		numbers.push(Math.round(Math.random() * (range[1] - range[0]) - range[0]))
 	return numbers
 }
 
