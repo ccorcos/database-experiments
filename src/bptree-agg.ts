@@ -320,19 +320,6 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 		}
 
 		return results
-
-		// if (args.reverse) {
-		// 	if (!args.limit) return this.data.slice(startIndex, endIndex).reverse()
-		// 	return this.data
-		// 		.slice(Math.max(startIndex, endIndex - args.limit), endIndex)
-		// 		.reverse()
-		// }
-
-		// if (!args.limit) return this.data.slice(startIndex, endIndex)
-		// return this.data.slice(
-		// 	startIndex,
-		// 	Math.min(startIndex + args.limit, endIndex)
-		// )
 	}
 
 	data = (args: { start?: K; end?: K }) => {

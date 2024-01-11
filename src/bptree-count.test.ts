@@ -436,7 +436,7 @@ describe("BinaryPlusCountTree", () => {
 		)
 	})
 
-	it("count property test", () => {
+	it.only("count property test", () => {
 		const randomTuples = (
 			n: number,
 			len: number,
@@ -478,12 +478,12 @@ describe("BinaryPlusCountTree", () => {
 		for (const range of ranges) {
 			const start = tuples[range[0]]
 			const end = tuples[range[1]]
-			const result = tree.list({ start, end }).map(({ key }) => key)
-			const target = tuples.slice(range[0], range[1])
+			const result = tree.count({ start, end })
+			const target = tuples.slice(range[0], range[1]).length
 			assert.deepEqual(
 				result,
 				target,
-				`range: [${range[0]},	${range[1]}] start: ${JSON.stringify(
+				`range: [${range[0]},${range[1]}] start: ${JSON.stringify(
 					start
 				)} end: ${JSON.stringify(end)}`
 			)

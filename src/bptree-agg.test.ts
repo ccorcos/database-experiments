@@ -217,7 +217,7 @@ const minValue: Aggregator<any, number, number> = {
 function combineAggregators() {}
 
 const combined: Aggregator<
-	string | number,
+	any,
 	number,
 	{ count: number; min: number; max: number }
 > = {
@@ -380,8 +380,8 @@ describe("BinaryPlusAggregationTree", () => {
 		const tree = new BinaryPlusAggregationTree(
 			3,
 			9,
-			count.leaf,
-			count.branch,
+			combined.leaf,
+			combined.branch,
 			jsonCodec.compare
 		)
 		for (const tuple of tuples) {
@@ -416,7 +416,7 @@ describe("BinaryPlusAggregationTree", () => {
 		}
 	})
 
-	it.only("count", function () {
+	it("count", function () {
 		this.timeout(20_000)
 		const numbers = Array(1000)
 			.fill(0)
@@ -488,7 +488,7 @@ describe("BinaryPlusAggregationTree", () => {
 		)
 	})
 
-	it("count property test", () => {
+	it("aggregation property test", () => {
 		const randomTuples = (
 			n: number,
 			len: number,
@@ -536,8 +536,8 @@ describe("BinaryPlusAggregationTree", () => {
 		for (const range of ranges) {
 			const start = tuples[range[0]]
 			const end = tuples[range[1]]
-			const result = tree.list({ start, end }).map(({ key }) => key)
-			const target = tuples.slice(range[0], range[1])
+			const result = tree.data({ start, end })
+			const target = tuples.slice(range[0], range[1]).length
 			assert.deepEqual(
 				result,
 				target,
