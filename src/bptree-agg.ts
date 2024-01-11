@@ -8,7 +8,6 @@
 */
 
 import { orderedArray } from "@ccorcos/ordered-array"
-import { sum } from "lodash"
 
 type Key = string | number
 
@@ -37,8 +36,9 @@ type NodeCursor<K, V, D> = {
 	indexPath: number[]
 }
 
-function sumChildrenCount<K, D>(children: BranchNode<K, D>["children"]) {
-	return sum(children.map(({ data: count }) => count))
+export type Aggregator<K, V, D> = {
+	leaf: (values: LeafNode<K, V, D>["values"]) => D
+	branch: (children: BranchNode<K, D>["children"]) => D
 }
 
 export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
@@ -51,8 +51,8 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 	constructor(
 		public minSize: number,
 		public maxSize: number,
-		private reduceLeaf: (values: LeafNode<K, V, D>["values"]) => D,
-		private reduceBranch: (values: BranchNode<K, D>["children"]) => D,
+		public reduceLeaf: (values: LeafNode<K, V, D>["values"]) => D,
+		public reduceBranch: (values: BranchNode<K, D>["children"]) => D,
 		public compareKey: (a: K, b: K) => number = compare
 	) {
 		if (minSize > maxSize / 2) throw new Error("Invalid tree size.")
@@ -362,7 +362,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 
 		if (startLeaf.id === endLeaf.id) {
 			let startIndex = 0
-			let endIndex = endLeaf.values.length - 1
+			let endIndex = endLeaf.values.length
 			if (args.start) {
 				const result = this.leafValues.search(startLeaf.values, args.start)
 				const index = result.found !== undefined ? result.found : result.closest
@@ -399,7 +399,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 			endData = endLeaf.data
 		}
 
-		for (let i = 1; i < startKey.nodePath.length - 1; i++) {
+		for (let i = 1; i < startKey.nodePath.length; i++) {
 			const startBranch = startKey.nodePath[i] as BranchNode<K, D>
 			const endBranch = endKey.nodePath[i] as BranchNode<K, D>
 			const startIndex = startKey.indexPath[i - 1]

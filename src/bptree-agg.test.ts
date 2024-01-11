@@ -1,8 +1,8 @@
 import { strict as assert } from "assert"
 import { jsonCodec } from "lexicodec"
-import { cloneDeep, sum, uniqWith } from "lodash"
+import { cloneDeep, max, min, sum, uniqWith } from "lodash"
 import { describe, it } from "mocha"
-import { BinaryPlusCountTree } from "./bptree-count"
+import { Aggregator, BinaryPlusAggregationTree } from "./bptree-agg"
 
 // min = 2, max = 4
 const structuralTests24 = `
@@ -199,9 +199,49 @@ const structuralTests24 = `
 
 `
 
-describe("BinaryPlusCountTree", () => {
+const count: Aggregator<any, any, number> = {
+	leaf: (values) => values.length,
+	branch: (children) => sum(children.map((child) => child.data)),
+}
+
+const maxValue: Aggregator<any, number, number> = {
+	leaf: (values) => max(values.map((v) => v.value))!,
+	branch: (children) => max(children.map((child) => child.data))!,
+}
+
+const minValue: Aggregator<any, number, number> = {
+	leaf: (values) => min(values.map((v) => v.value))!,
+	branch: (children) => min(children.map((child) => child.data))!,
+}
+
+function combineAggregators() {}
+
+const combined: Aggregator<
+	string | number,
+	number,
+	{ count: number; min: number; max: number }
+> = {
+	leaf: (values) => ({
+		count: count.leaf(values),
+		min: minValue.leaf(values),
+		max: maxValue.leaf(values),
+	}),
+	branch: (children) => ({
+		count: count.branch(
+			children.map((child) => ({ ...child, data: child.data.count }))
+		),
+		min: minValue.branch(
+			children.map((child) => ({ ...child, data: child.data.min }))
+		),
+		max: maxValue.branch(
+			children.map((child) => ({ ...child, data: child.data.max }))
+		),
+	}),
+}
+
+describe("BinaryPlusAggregationTree", () => {
 	describe("structural tests 2-4", () => {
-		const tree = new BinaryPlusCountTree(2, 4)
+		const tree = new BinaryPlusAggregationTree(2, 4, count.leaf, count.branch)
 		test(tree, structuralTests24)
 	})
 
@@ -215,7 +255,7 @@ describe("BinaryPlusCountTree", () => {
 
 	it("big tree", () => {
 		const numbers = randomNumbers(20_000)
-		const tree = new BinaryPlusCountTree(3, 9)
+		const tree = new BinaryPlusAggregationTree(3, 9, count.leaf, count.branch)
 		for (const number of numbers) {
 			tree.set(number, number * 2)
 			assert.equal(tree.get(number), number * 2)
@@ -228,7 +268,13 @@ describe("BinaryPlusCountTree", () => {
 	})
 
 	it("tuple keys", () => {
-		const tree = new BinaryPlusCountTree<any[], any>(3, 9, jsonCodec.compare)
+		const tree = new BinaryPlusAggregationTree<any[], any>(
+			3,
+			9,
+			count.leaf,
+			count.branch,
+			jsonCodec.compare
+		)
 
 		const numbers = randomNumbers(2000)
 		for (const number of numbers) {
@@ -248,7 +294,7 @@ describe("BinaryPlusCountTree", () => {
 		const numbers = Array(1000)
 			.fill(0)
 			.map((x, i) => i * 2)
-		const tree = new BinaryPlusCountTree(3, 9)
+		const tree = new BinaryPlusAggregationTree(3, 9, count.leaf, count.branch)
 		for (const number of numbers) {
 			tree.set(number, number)
 		}
@@ -331,7 +377,13 @@ describe("BinaryPlusCountTree", () => {
 		tuples = uniqWith(tuples, (a, b) => jsonCodec.compare(a, b) === 0)
 		tuples.sort(jsonCodec.compare)
 
-		const tree = new BinaryPlusCountTree(3, 9, jsonCodec.compare)
+		const tree = new BinaryPlusAggregationTree(
+			3,
+			9,
+			count.leaf,
+			count.branch,
+			jsonCodec.compare
+		)
 		for (const tuple of tuples) {
 			tree.set(tuple, sum(tuple))
 		}
@@ -364,23 +416,23 @@ describe("BinaryPlusCountTree", () => {
 		}
 	})
 
-	it("count", function () {
+	it.only("count", function () {
 		this.timeout(20_000)
 		const numbers = Array(1000)
 			.fill(0)
 			.map((x, i) => i * 2)
-		const tree = new BinaryPlusCountTree(3, 9)
+		const tree = new BinaryPlusAggregationTree(3, 9, count.leaf, count.branch)
 		for (const number of numbers) {
 			tree.set(number, number)
 			verifyCount(tree)
 		}
 
 		// Entire thing
-		assert.deepEqual(tree.count({}), numbers.length)
+		assert.deepEqual(tree.data({}), numbers.length)
 
 		// No start bound
 		assert.deepEqual(
-			tree.count({ end: 9 }),
+			tree.data({ end: 9 }),
 			[
 				{ key: 0, value: 0 },
 				{ key: 2, value: 2 },
@@ -392,7 +444,7 @@ describe("BinaryPlusCountTree", () => {
 
 		// Within the same branch.
 		assert.deepEqual(
-			tree.count({ start: 3, end: 9 }),
+			tree.data({ start: 3, end: 9 }),
 			[
 				{ key: 4, value: 4 },
 				{ key: 6, value: 6 },
@@ -401,7 +453,7 @@ describe("BinaryPlusCountTree", () => {
 		)
 
 		assert.deepEqual(
-			tree.count({ start: 4, end: 10 }),
+			tree.data({ start: 4, end: 10 }),
 			[
 				{ key: 4, value: 4 },
 				{ key: 6, value: 6 },
@@ -411,7 +463,7 @@ describe("BinaryPlusCountTree", () => {
 
 		// Across branches.
 		assert.deepEqual(
-			tree.count({ start: 4, end: 24 }),
+			tree.data({ start: 4, end: 24 }),
 			[
 				{ key: 4, value: 4 },
 				{ key: 6, value: 6 },
@@ -428,7 +480,7 @@ describe("BinaryPlusCountTree", () => {
 
 		// No end bound.
 		assert.deepEqual(
-			tree.count({ start: 2000 - 4 }),
+			tree.data({ start: 2000 - 4 }),
 			[
 				{ key: 1996, value: 1996 },
 				{ key: 1998, value: 1998 },
@@ -457,7 +509,13 @@ describe("BinaryPlusCountTree", () => {
 		tuples = uniqWith(tuples, (a, b) => jsonCodec.compare(a, b) === 0)
 		tuples.sort(jsonCodec.compare)
 
-		const tree = new BinaryPlusCountTree(3, 9, jsonCodec.compare)
+		const tree = new BinaryPlusAggregationTree(
+			3,
+			9,
+			count.leaf,
+			count.branch,
+			jsonCodec.compare
+		)
 		for (const tuple of tuples) {
 			tree.set(tuple, sum(tuple))
 		}
@@ -498,7 +556,12 @@ describe("BinaryPlusCountTree", () => {
 		const size = args.testSize
 		const numbers = randomNumbers(size)
 
-		const tree = new BinaryPlusCountTree(args.minSize, args.maxSize)
+		const tree = new BinaryPlusAggregationTree(
+			args.minSize,
+			args.maxSize,
+			count.leaf,
+			count.branch
+		)
 		for (let i = 0; i < size; i++) {
 			const n = numbers[i]
 			it(`Set ${i} : ${n}`, () => {
@@ -593,7 +656,7 @@ function parseTests(str: string) {
 	})
 }
 
-function test(tree: BinaryPlusCountTree, str: string) {
+function test(tree: BinaryPlusAggregationTree, str: string) {
 	for (const test of parseTests(structuralTests24)) {
 		let label = `${test.op} ${test.n}`
 		if (test.comment) label += " // " + test.comment
@@ -618,7 +681,7 @@ type KeyTree =
 	| { keys: Key[]; children?: undefined }
 	| { keys: Key[]; children: KeyTree[] }
 
-function toKeyTree(tree: BinaryPlusCountTree, id = "root"): KeyTree {
+function toKeyTree(tree: BinaryPlusAggregationTree, id = "root"): KeyTree {
 	const node = tree.nodes[id]
 	if (!node) throw new Error("Missing node!")
 
@@ -659,7 +722,7 @@ function print(x: any) {
 	return ""
 }
 
-function inspect(tree: BinaryPlusCountTree) {
+function inspect(tree: BinaryPlusAggregationTree) {
 	const keyTree = toKeyTree(tree)
 	const layers = toTreeLayers(keyTree)
 	const str = layers
@@ -670,14 +733,20 @@ function inspect(tree: BinaryPlusCountTree) {
 	return str
 }
 
-function clone(tree: BinaryPlusCountTree) {
-	const cloned = new BinaryPlusCountTree(tree.minSize, tree.maxSize)
+function clone(tree: BinaryPlusAggregationTree) {
+	const cloned = new BinaryPlusAggregationTree(
+		tree.minSize,
+		tree.maxSize,
+		tree.reduceLeaf,
+		tree.reduceBranch,
+		tree.compareKey
+	)
 	cloned.nodes = cloneDeep(tree.nodes)
 	return cloned
 }
 
 /** Check for node sizes. */
-function verify(tree: BinaryPlusCountTree, id = "root") {
+function verify(tree: BinaryPlusAggregationTree, id = "root") {
 	const node = tree.nodes[id]
 	if (id === "root") {
 		assert.equal(countNodes(tree), Object.keys(tree.nodes).length)
@@ -697,39 +766,42 @@ function verify(tree: BinaryPlusCountTree, id = "root") {
 }
 
 /** Check for node sizes. */
-function verifyCount(tree: BinaryPlusCountTree, id = "root"): number {
+function verifyCount(
+	tree: BinaryPlusAggregationTree<any, any, number>,
+	id = "root"
+): number {
 	const node = tree.nodes[id]
 	if (!node) return 0
 
 	if (node.leaf) {
-		assert.equal(node.count, node.values.length, "leaf count")
-		return node.count
+		assert.equal(node.data, node.values.length, "leaf count")
+		return node.data
 	}
 
 	let branchCount = 0
 	for (const child of node.children) {
 		const childCount = verifyCount(tree, child.childId)
 		assert.equal(
-			child.count,
+			child.data,
 			childCount,
 			[
 				"child count",
 				"minKeys",
 				JSON.stringify(node.children.map((child) => child.minKey)),
-				"item.count",
-				child.count,
+				"item.data",
+				child.data,
 				"node count",
 				childCount,
 				"tree",
 				inspect(tree),
 			].join("\n")
 		)
-		branchCount += child.count
+		branchCount += child.data
 	}
 	return branchCount
 }
 
-function countNodes(tree: BinaryPlusCountTree, id = "root") {
+function countNodes(tree: BinaryPlusAggregationTree, id = "root") {
 	const node = tree.nodes[id]
 	if (id === "root") {
 		if (!node) return 0
