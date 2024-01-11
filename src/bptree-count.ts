@@ -351,63 +351,80 @@ export class BinaryPlusCountTree<K = string | number, V = any> {
 			endKey = this.endCursor()
 		}
 
-		let count = 0
-
 		const startLeaf = startKey.nodePath[0] as LeafNode<K, V>
+		const endLeaf = endKey.nodePath[0] as LeafNode<K, V>
+
+		if (startLeaf.id === endLeaf.id) {
+			let startIndex = 0
+			let endIndex = endLeaf.values.length
+			if (args.start) {
+				const result = this.leafValues.search(startLeaf.values, args.start)
+				const index = result.found !== undefined ? result.found : result.closest
+				startIndex = index
+			}
+			if (args.end) {
+				const result = this.leafValues.search(endLeaf.values, args.end)
+				const index = result.found !== undefined ? result.found : result.closest
+				endIndex = index
+			}
+
+			const values = startLeaf.values.slice(startIndex, endIndex)
+			const count = values.length
+			return count
+		}
+
+		let startCount: number
 		if (args.start) {
 			const result = this.leafValues.search(startLeaf.values, args.start)
 			const index = result.found !== undefined ? result.found : result.closest
-			const startOffset = index
-			count -= startOffset
-			// console.log("startOffset", startOffset)
+			startCount = startLeaf.values.length - index
+		} else {
+			startCount = startLeaf.count
 		}
 
-		const endLeaf = endKey.nodePath[0] as LeafNode<K, V>
+		let endCount: number
 		if (args.end) {
 			const result = this.leafValues.search(endLeaf.values, args.end)
 			const index = result.found !== undefined ? result.found : result.closest
-			const endOffset = endLeaf.count - index
-			count -= endOffset
-			// console.log("endOffset", endOffset)
+			endCount = index
+		} else {
+			endCount = endLeaf.count
 		}
 
-		for (let i = startKey.nodePath.length - 1; i >= 0; i--) {
-			if (i === 0) {
-				// LeafNode
-				const startLeaf = startKey.nodePath[i] as LeafNode<K, V>
-				const endLeaf = endKey.nodePath[i] as LeafNode<K, V>
-				if (startLeaf.id !== endLeaf.id)
-					throw new Error("Leaves shouldn't diverge here.")
-				count += startLeaf.count
-
-				// console.log("Leaf", startLeaf.count)
-				break
-			}
-
-			// BranchNode
+		for (let i = 1; i < startKey.nodePath.length; i++) {
 			const startBranch = startKey.nodePath[i] as BranchNode<K>
 			const endBranch = endKey.nodePath[i] as BranchNode<K>
 			const startIndex = startKey.indexPath[i - 1]
 			const endIndex = endKey.indexPath[i - 1]
 
-			if (startBranch.id !== endBranch.id)
-				throw new Error("Branches shouldn't diverge here.")
-			if (startIndex === endIndex) continue
+			const startItem = {
+				...startBranch.children[startIndex],
+				count: startCount,
+			}
+			const endItem = {
+				...endBranch.children[endIndex],
+				count: endCount,
+			}
 
-			// console.log(
-			// 	"Branch",
-			// 	startIndex,
-			// 	endIndex,
-			// 	startBranch.children.map((child) => child.count)
-			// )
+			if (startBranch.id !== endBranch.id) {
+				const startRest = startBranch.children.slice(startIndex + 1)
+				startCount = sum([startItem, ...startRest].map(({ count }) => count))
+				const endRest = endBranch.children.slice(0, endIndex)
+				endCount = sum([...endRest, endItem].map(({ count }) => count))
+				continue
+			}
 
-			const subtreeCount = sumChildrenCount(
-				startBranch.children.slice(startIndex, endIndex + 1)
+			if (startIndex === endIndex) throw new Error("This shouldn't happen")
+
+			const middleItems = startBranch.children.slice(startIndex + 1, endIndex)
+			const resultCount = sum(
+				[startItem, ...middleItems, endItem].map(({ count }) => count)
 			)
-			count += subtreeCount
-			break
+
+			return resultCount
 		}
-		return count
+
+		throw new Error("This shouldn't happen.")
 	}
 
 	set = (key: K, value: V) => {

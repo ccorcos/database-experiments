@@ -512,8 +512,8 @@ describe("BinaryPlusAggregationTree", () => {
 		const tree = new BinaryPlusAggregationTree(
 			3,
 			9,
-			count.leaf,
-			count.branch,
+			combined.leaf,
+			combined.branch,
 			jsonCodec.compare
 		)
 		for (const tuple of tuples) {
@@ -537,14 +537,12 @@ describe("BinaryPlusAggregationTree", () => {
 			const start = tuples[range[0]]
 			const end = tuples[range[1]]
 			const result = tree.data({ start, end })
-			const target = tuples.slice(range[0], range[1]).length
-			assert.deepEqual(
-				result,
-				target,
-				`range: [${range[0]},	${range[1]}] start: ${JSON.stringify(
-					start
-				)} end: ${JSON.stringify(end)}`
-			)
+			const slice = tuples.slice(range[0], range[1])
+			assert.deepEqual(result, {
+				count: slice.length,
+				min: min(slice.map((t) => sum(t))),
+				max: max(slice.map((t) => sum(t))),
+			})
 		}
 	})
 

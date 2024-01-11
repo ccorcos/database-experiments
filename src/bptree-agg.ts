@@ -392,8 +392,8 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 			const startIndex = startKey.indexPath[i - 1]
 			const endIndex = endKey.indexPath[i - 1]
 
-			const startItem = { ...startBranch[startIndex], data: startData }
-			const endItem = { ...endBranch[endIndex], data: endData }
+			const startItem = { ...startBranch.children[startIndex], data: startData }
+			const endItem = { ...endBranch.children[endIndex], data: endData }
 
 			if (startBranch.id !== endBranch.id) {
 				const startRest = startBranch.children.slice(startIndex + 1)

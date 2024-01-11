@@ -436,7 +436,7 @@ describe("BinaryPlusCountTree", () => {
 		)
 	})
 
-	it.only("count property test", () => {
+	it("count property test", () => {
 		const randomTuples = (
 			n: number,
 			len: number,
