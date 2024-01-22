@@ -257,13 +257,3 @@ This [CMU class 15-826](https://www.cs.cmu.edu/~christos/courses/826.F19/FOILS-p
 The most common usecase for an interval tree is for date range queries, e.g. "get me all of the events that overlap with this week". However, these dates are usually translated into a numerical value so that doesn't help us much.
 
 The concept isn't all that complicated though... We have a tree sorted by start, and propagate the maxEnd for the node all the way up the tree.
-
-
-
-
-
-
-TODO
-- bugs deleting all the way to the root node?
-- How to implement this kind of thing on another database? Postgres, FoundationDb, SQLite.
-- Implement list functionality.
