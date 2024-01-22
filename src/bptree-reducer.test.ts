@@ -6,7 +6,7 @@ import {
 	BinaryPlusReducerTree,
 	TreeReducer,
 	combineTreeReducers,
-} from "./bptree-agg"
+} from "./bptree-reducer"
 
 // min = 2, max = 4
 const structuralTests24 = `
