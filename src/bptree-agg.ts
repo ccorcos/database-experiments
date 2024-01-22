@@ -1,7 +1,7 @@
 /*
 
 - generalize aggregation reducer.
-- generalize to GiST
+- generalize to GiST?
 ---
 - interval range query
 
@@ -36,12 +36,40 @@ type NodeCursor<K, V, D> = {
 	indexPath: number[]
 }
 
-export type Aggregator<K, V, D> = {
+export type TreeReducer<K, V, D> = {
 	leaf: (values: LeafNode<K, V, D>["values"]) => D
 	branch: (children: BranchNode<K, D>["children"]) => D
 }
 
-export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
+export function combineTreeReducers<
+	A extends { [key: string]: TreeReducer<any, any, any> }
+>(reducers: A) {
+	const combined: TreeReducer<
+		A[keyof A] extends TreeReducer<infer K, any, any> ? K : never,
+		A[keyof A] extends TreeReducer<any, infer V, any> ? V : never,
+		{ [K in keyof A]: ReturnType<A[K]["leaf"]> }
+	> = {
+		leaf: (values) => {
+			const data: any = {}
+			for (const [key, reducer] of Object.entries(reducers)) {
+				data[key] = reducer.leaf(values)
+			}
+			return data
+		},
+		branch: (children) => {
+			const data: any = {}
+			for (const [key, reducer] of Object.entries(reducers)) {
+				data[key] = reducer.branch(
+					children.map((child) => ({ ...child, data: child.data[key] }))
+				)
+			}
+			return data
+		},
+	}
+	return combined
+}
+
+export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 	// In preparation for storing nodes in a key-value database.
 	nodes: { [key: Key]: BranchNode<K, D> | LeafNode<K, V, D> | undefined } = {}
 
@@ -51,8 +79,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 	constructor(
 		public minSize: number,
 		public maxSize: number,
-		public reduceLeaf: (values: LeafNode<K, V, D>["values"]) => D,
-		public reduceBranch: (values: BranchNode<K, D>["children"]) => D,
+		public reducer: TreeReducer<K, V, D>,
 		public compareKey: (a: K, b: K) => number = compare
 	) {
 		if (minSize > maxSize / 2) throw new Error("Invalid tree size.")
@@ -322,7 +349,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 		return results
 	}
 
-	data = (args: { start?: K; end?: K }) => {
+	reduce = (args: { start?: K; end?: K }) => {
 		if (
 			args.start !== undefined &&
 			args.end !== undefined &&
@@ -362,7 +389,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 			}
 
 			const values = startLeaf.values.slice(startIndex, endIndex)
-			const data = this.reduceLeaf(values)
+			const data = this.reducer.leaf(values)
 			return data
 		}
 
@@ -371,7 +398,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 			const result = this.leafValues.search(startLeaf.values, args.start)
 			const index = result.found !== undefined ? result.found : result.closest
 			const startValues = startLeaf.values.slice(index)
-			startData = this.reduceLeaf(startValues)
+			startData = this.reducer.leaf(startValues)
 		} else {
 			startData = startLeaf.data
 		}
@@ -381,7 +408,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 			const result = this.leafValues.search(endLeaf.values, args.end)
 			const index = result.found !== undefined ? result.found : result.closest
 			const endValues = endLeaf.values.slice(0, index)
-			endData = this.reduceLeaf(endValues)
+			endData = this.reducer.leaf(endValues)
 		} else {
 			endData = endLeaf.data
 		}
@@ -397,16 +424,20 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 
 			if (startBranch.id !== endBranch.id) {
 				const startRest = startBranch.children.slice(startIndex + 1)
-				startData = this.reduceBranch([startItem, ...startRest])
+				startData = this.reducer.branch([startItem, ...startRest])
 				const endRest = endBranch.children.slice(0, endIndex)
-				endData = this.reduceBranch([...endRest, endItem])
+				endData = this.reducer.branch([...endRest, endItem])
 				continue
 			}
 
 			if (startIndex === endIndex) throw new Error("This shouldn't happen")
 
 			const middleItems = startBranch.children.slice(startIndex + 1, endIndex)
-			const resultData = this.reduceBranch([startItem, ...middleItems, endItem])
+			const resultData = this.reducer.branch([
+				startItem,
+				...middleItems,
+				endItem,
+			])
 
 			return resultData
 		}
@@ -422,7 +453,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 			this.nodes["root"] = {
 				leaf: true,
 				id: "root",
-				data: this.reduceLeaf([{ key, value }]),
+				data: this.reducer.leaf([{ key, value }]),
 				values: [{ key, value }],
 			}
 			return
@@ -438,8 +469,8 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 
 			if (size <= this.maxSize) {
 				// No splitting, update count.
-				if (node.leaf) node.data = this.reduceLeaf(node.values)
-				else node.data = this.reduceBranch(node.children)
+				if (node.leaf) node.data = this.reducer.leaf(node.values)
+				else node.data = this.reducer.branch(node.children)
 
 				// We're at the root.
 				if (nodePath.length === 0) break
@@ -462,11 +493,11 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 				const rightNode: LeafNode<K, V, D> = {
 					id: randomId(),
 					leaf: true,
-					data: this.reduceLeaf(rightValues),
+					data: this.reducer.leaf(rightValues),
 					values: rightValues,
 				}
 				this.nodes[rightNode.id] = rightNode
-				node.data = this.reduceLeaf(node.values)
+				node.data = this.reducer.leaf(node.values)
 
 				if (node.id === "root") {
 					const leftNode: LeafNode<K, V, D> = {
@@ -490,7 +521,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 						id: "root",
 						leaf: false,
 						children: rootNodeChildren,
-						data: this.reduceBranch(rootNodeChildren),
+						data: this.reducer.branch(rootNodeChildren),
 					}
 					this.nodes["root"] = rootNode
 					break
@@ -517,10 +548,10 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 			const rightNode: BranchNode<K, D> = {
 				id: randomId(),
 				children: rightChildren,
-				data: this.reduceBranch(rightChildren),
+				data: this.reducer.branch(rightChildren),
 			}
 			this.nodes[rightNode.id] = rightNode
-			node.data = this.reduceBranch(node.children)
+			node.data = this.reducer.branch(node.children)
 
 			if (node.id === "root") {
 				const leftNode: BranchNode<K, D> = {
@@ -541,7 +572,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 				const rootNode: BranchNode<K, D> = {
 					id: "root",
 					children: rootNodeChildren,
-					data: this.reduceBranch(rootNodeChildren),
+					data: this.reducer.branch(rootNodeChildren),
 				}
 				this.nodes["root"] = rootNode
 				break
@@ -594,9 +625,9 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 		let node = nodePath.shift()
 		while (node) {
 			if (node.leaf) {
-				node.data = this.reduceLeaf(node.values)
+				node.data = this.reducer.leaf(node.values)
 			} else {
-				node.data = this.reduceBranch(node.children)
+				node.data = this.reducer.branch(node.children)
 			}
 
 			if (node.id === "root") {
@@ -676,8 +707,8 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 						const moveLeft = rightSibling.values.splice(0, splitIndex)
 						node.values.push(...moveLeft)
 
-						node.data = this.reduceLeaf(node.values)
-						rightSibling.data = this.reduceLeaf(rightSibling.values)
+						node.data = this.reducer.leaf(node.values)
+						rightSibling.data = this.reducer.leaf(rightSibling.values)
 
 						// Update parent minKey.
 						if (parent.children[parentIndex].minKey !== null) {
@@ -698,7 +729,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 
 					// Merge leaves.
 					node.values.push(...rightSibling.values)
-					node.data = this.reduceLeaf(node.values)
+					node.data = this.reducer.leaf(node.values)
 
 					// Delete rightSibling
 					parent.children.splice(1, 1)
@@ -728,8 +759,8 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 					const moveRight = leftSibling.values.splice(splitIndex, this.maxSize)
 					node.values.unshift(...moveRight)
 
-					leftSibling.data = this.reduceLeaf(leftSibling.values)
-					node.data = this.reduceLeaf(node.values)
+					leftSibling.data = this.reducer.leaf(leftSibling.values)
+					node.data = this.reducer.leaf(node.values)
 
 					// Update parent minKey.
 					parent.children[parentIndex].minKey = node.values[0].key
@@ -744,7 +775,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 
 				// Merge leaf.
 				leftSibling.values.push(...node.values)
-				leftSibling.data = this.reduceLeaf(leftSibling.values)
+				leftSibling.data = this.reducer.leaf(leftSibling.values)
 
 				// Delete the node
 				parent.children.splice(parentIndex, 1)
@@ -773,8 +804,8 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 					const moveLeft = rightSibling.children.splice(0, splitIndex)
 					node.children.push(...moveLeft)
 
-					rightSibling.data = this.reduceBranch(rightSibling.children)
-					node.data = this.reduceBranch(node.children)
+					rightSibling.data = this.reducer.branch(rightSibling.children)
+					node.data = this.reducer.branch(node.children)
 
 					// Update parent minKey.
 					if (parent.children[parentIndex].minKey !== null) {
@@ -795,7 +826,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 
 				// Merge leaves.
 				node.children.push(...rightSibling.children)
-				node.data = this.reduceBranch(node.children)
+				node.data = this.reducer.branch(node.children)
 
 				// Delete rightSibling
 				parent.children.splice(1, 1)
@@ -826,8 +857,8 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 				const moveRight = leftSibling.children.splice(splitIndex, this.maxSize)
 				node.children.unshift(...moveRight)
 
-				leftSibling.data = this.reduceBranch(leftSibling.children)
-				node.data = this.reduceBranch(node.children)
+				leftSibling.data = this.reducer.branch(leftSibling.children)
+				node.data = this.reducer.branch(node.children)
 
 				// Update parent minKey.
 				parent.children[parentIndex].minKey = node.children[0].minKey
@@ -842,7 +873,7 @@ export class BinaryPlusAggregationTree<K = string | number, V = any, D = any> {
 
 			// Merge leaf.
 			leftSibling.children.push(...node.children)
-			leftSibling.data = this.reduceBranch(leftSibling.children)
+			leftSibling.data = this.reducer.branch(leftSibling.children)
 
 			// Delete the node
 			parent.children.splice(parentIndex, 1)

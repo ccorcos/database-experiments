@@ -240,7 +240,10 @@ Eventually, using GiST (generalized search tree) as an inspiration, we'll see if
 
 This is a generalization of the count tree, using a reducer to essentially index aggregation queries.
 
+The main downside to this approach is there's no chance for crab latching stuff with locks, so concurrency goes out the window. But maybe thats ok.
 
+
+If I'm going to make this into [GiST](https://gist.cs.berkeley.edu), seems like its all still just keys and values... I'm not sure what a good example is where the keys aren't sorted though.
 
 HERE
 
