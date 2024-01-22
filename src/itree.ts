@@ -5,7 +5,7 @@ import {
 	TreeReducer,
 } from "./bptree-reducer"
 
-export function intervalReducer<I extends [any, any]>(
+function intervalReducer<I extends [any, any]>(
 	reduce: (acc: I, interval: I) => I
 ): TreeReducer<[...I, any], any, I> {
 	return {
@@ -29,20 +29,17 @@ export function intervalReducer<I extends [any, any]>(
 export class BinaryPlusIntervalTree<
 	B,
 	K extends [B, B, any],
-	V,
-	D extends { interval: [B, B] }
-> extends BinaryPlusReducerTree<K, V, D> {
+	V = any
+> extends BinaryPlusReducerTree<K, V, [B, B]> {
 	constructor(
 		public minSize: number,
 		public maxSize: number,
-		public reducer: TreeReducer<K, V, D>,
-		public compareKey: (a: [B] | [B, B] | K, b: [B] | [B, B] | K) => number
+		public reduceInterval: (acc: [B, B], interval: [B, B]) => [B, B],
+		public compareKey: (a: K, b: K) => number,
+		public compareBound: (a: B, b: B) => number
 	) {
+		const reducer = intervalReducer(reduceInterval)
 		super(minSize, maxSize, reducer, compareKey)
-	}
-
-	private compareBound = (a: B, b: B) => {
-		return this.compareKey([a], [b])
 	}
 
 	private boundsOverlap(a: [B, B], b: [B, B]) {
@@ -51,7 +48,7 @@ export class BinaryPlusIntervalTree<
 
 		// return max >= start && min <= end
 		return (
-			this.compareBound(max, start) !== -1 && this.compareBound(min, end) !== 1
+			this.compareBound(max, start) >= 0 && this.compareBound(min, end) <= 0
 		)
 	}
 
@@ -68,7 +65,7 @@ export class BinaryPlusIntervalTree<
 
 		{
 			// No results.
-			const [min, max] = root.data.interval
+			const [min, max] = root.data
 			if (!this.boundsOverlap([start, end], [min, max])) {
 				return []
 			}
@@ -81,7 +78,7 @@ export class BinaryPlusIntervalTree<
 			const nextLayerIds: string[] = []
 			for (const node of layer) {
 				for (const child of node.children) {
-					const [min, max] = child.data.interval
+					const [min, max] = child.data
 					if (this.boundsOverlap([start, end], [min, max])) {
 						nextLayerIds.push(child.childId)
 					}
@@ -98,11 +95,11 @@ export class BinaryPlusIntervalTree<
 
 			// Recur until we get to the leaves.
 			if (!nextLayer[0].leaf) {
-				layer = nextLayer as BranchNode<K, D>[]
+				layer = nextLayer as BranchNode<K, [B, B]>[]
 				continue
 			}
 
-			const leaves = nextLayer as LeafNode<K, V, D>[]
+			const leaves = nextLayer as LeafNode<K, V, [B, B]>[]
 			const result: { key: K; value: V }[] = []
 			for (const leaf of leaves) {
 				for (const item of leaf.values) {
