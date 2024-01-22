@@ -1,12 +1,3 @@
-/*
-
-- generalize aggregation reducer.
-- generalize to GiST?
----
-- interval range query
-
-*/
-
 import { orderedArray } from "@ccorcos/ordered-array"
 
 type Key = string | number
@@ -31,7 +22,7 @@ function compare(a: any, b: any) {
 	return -1
 }
 
-type NodeCursor<K, V, D> = {
+export type NodeCursor<K, V, D> = {
 	nodePath: (BranchNode<K, D> | LeafNode<K, V, D>)[]
 	indexPath: number[]
 }
@@ -251,9 +242,6 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 		}
 	}
 
-	// HERE
-	// - reverse arg
-	// - rigorous property testing.
 	list = (args: {
 		start?: K
 		end?: K
@@ -269,17 +257,18 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 		}
 
 		let startKey: NodeCursor<K, V, D> | undefined
-		let endKey: NodeCursor<K, V, D> | undefined
 		if (args.start) {
 			startKey = this.findPath(args.start)
 		} else {
 			startKey = this.startCursor()
 		}
-		if (args.end) {
-			endKey = this.findPath(args.end)
-		} else {
-			endKey = this.endCursor()
-		}
+
+		// let endKey: NodeCursor<K, V, D> | undefined
+		// if (args.end) {
+		// 	endKey = this.findPath(args.end)
+		// } else {
+		// 	endKey = this.endCursor()
+		// }
 
 		// if (!args.reverse) {
 		const results: { key: K; value: V }[] = []
@@ -293,7 +282,7 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 			results.push(...leaf.values)
 		}
 
-		// End bound
+		// End bound in the same leaf node as the startKey.
 		if (
 			args.end &&
 			this.compareKey(results[results.length - 1].key, args.end) >= 0
@@ -310,7 +299,7 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 			return results
 		}
 
-		// Limit bound
+		// Limit bound in the first lead node.
 		if (args.limit && results.length >= args.limit) {
 			results.splice(args.limit, results.length)
 			return results
@@ -319,10 +308,9 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 		let cursor: NodeCursor<K, V, D> | undefined = startKey
 		while ((cursor = this.nextCursor(cursor))) {
 			const leaf = cursor.nodePath[0] as LeafNode<K, V, D>
-
 			results.push(...leaf.values)
 
-			// End bound
+			// End bound inside this lead node.
 			if (
 				args.end &&
 				this.compareKey(results[results.length - 1].key, args.end) >= 0
@@ -331,7 +319,7 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 				if (result.found) results.splice(result.found, results.length)
 				if (result.closest) results.splice(result.closest, results.length)
 
-				// End and limit bound
+				// End and limit bound.
 				if (args.limit && results.length >= args.limit) {
 					results.splice(args.limit, results.length)
 					return results
@@ -339,7 +327,7 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 				return results
 			}
 
-			// Limit bound
+			// Limit bound.
 			if (args.limit && results.length >= args.limit) {
 				results.splice(args.limit, results.length)
 				return results
@@ -904,5 +892,9 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 }
 
 function randomId() {
-	return Math.random().toString(36).slice(2, 10)
+	// 36^16 bits of randomness.
+	return (
+		Math.random().toString(36).slice(2, 10) +
+		Math.random().toString(36).slice(2, 10)
+	)
 }

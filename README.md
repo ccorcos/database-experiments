@@ -236,20 +236,13 @@ The goal in some sense is to try to generalize this tree logic so that we can in
 
 Eventually, using GiST (generalized search tree) as an inspiration, we'll see if we can generalize from there.
 
-## B+ Aggregation Tree (bptree-agg.ts)
+## B+ Reducer Tree (bptree-reducer.ts)
 
 This is a generalization of the count tree, using a reducer to essentially index aggregation queries.
 
-The main downside to this approach is there's no chance for crab latching stuff with locks, so concurrency goes out the window. But maybe thats ok.
+The main downside to this approach is there's no chance for crab latching stuff with locks, so concurrency goes out the window. But maybe thats ok. I think that aggregations are fundamentally either eventually consistent or going to block on writes like this.
 
-
-If I'm going to make this into [GiST](https://gist.cs.berkeley.edu), seems like its all still just keys and values... I'm not sure what a good example is where the keys aren't sorted though.
-
-HERE
-
-
-
-
+I was thinking I was going to make this into [GiST](https://gist.cs.berkeley.edu), but it's unclear how to do that. GiST only keeps track of keys and values. I'm not entirely sure it has a clear aggregation abstraction like this. I'm pretty happy with the API so far, so I'm going to stick with this for now.
 
 ## Interval B+ Tree (itree.ts)
 
@@ -259,23 +252,18 @@ A Range Tree (aka rtree) is a 2d generalization of an interval tree. However typ
 
 SQLite's rtree index is 2D numerical. Postgres GiST index is complicated. For numerical values, it uses an rtree-like structure. But it does accept text values but then it does trigram matching which doesn't seem to be what we want.
 
+This [CMU class 15-826](https://www.cs.cmu.edu/~christos/courses/826.F19/FOILS-pdf/130_SAMs_Rtrees.pdf), is a helpful resource for understadin R-trees though:
+
 The most common usecase for an interval tree is for date range queries, e.g. "get me all of the events that overlap with this week". However, these dates are usually translated into a numerical value so that doesn't help us much.
 
 The concept isn't all that complicated though... We have a tree sorted by start, and propagate the maxEnd for the node all the way up the tree.
 
 
-cmu 15-826
-https://www.cs.cmu.edu/~christos/courses/826.F19/FOILS-pdf/130_SAMs_Rtrees.pdf
-
-HERE
-- Lets start with a simpler example. Let's make count a fast operation.
-- Then lets work on interval.
-- From there, we cna probably generalize.
 
 
 
 
 TODO
-- bugs deletings all the way to the root node?
+- bugs deleting all the way to the root node?
 - How to implement this kind of thing on another database? Postgres, FoundationDb, SQLite.
-- implement list functionality.
+- Implement list functionality.
