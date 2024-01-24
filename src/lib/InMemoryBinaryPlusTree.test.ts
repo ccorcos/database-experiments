@@ -587,6 +587,56 @@ describe("InMemoryBinaryPlusTree", () => {
 				}
 			}
 		})
+
+		it("smaller property tests", () => {
+			const tree = new InMemoryBinaryPlusTree(3, 9)
+
+			const min = 0
+			const max = 100
+			const delta = 10
+
+			for (const { key, value } of listEvens(min, max)()) tree.set(key, value)
+
+			const testList = listTest(tree, min, max)
+
+			for (let start = -min - delta; start < max + delta; start += 1) {
+				for (let end = start; end < max + delta; end += 1) {
+					if (start !== end) {
+						testList({ gt: start, lt: end })
+						testList({ gt: start, lt: end, limit: 1 })
+						testList({ gt: start, lt: end, limit: 2 })
+						testList({ gt: start, lt: end, limit: 40 })
+						testList({ gt: start, lt: end, reverse: true })
+						testList({ gt: start, lt: end, reverse: true, limit: 1 })
+						testList({ gt: start, lt: end, reverse: true, limit: 2 })
+						testList({ gt: start, lt: end, reverse: true, limit: 40 })
+						testList({ gte: start, lt: end })
+						testList({ gte: start, lt: end, limit: 1 })
+						testList({ gte: start, lt: end, limit: 2 })
+						testList({ gte: start, lt: end, limit: 40 })
+						testList({ gte: start, lt: end, reverse: true })
+						testList({ gte: start, lt: end, reverse: true, limit: 1 })
+						testList({ gte: start, lt: end, reverse: true, limit: 2 })
+						testList({ gte: start, lt: end, reverse: true, limit: 40 })
+						testList({ gt: start, lte: end })
+						testList({ gt: start, lte: end, limit: 2 })
+						testList({ gt: start, lte: end, limit: 40 })
+						testList({ gt: start, lte: end, reverse: true })
+						testList({ gt: start, lte: end, reverse: true, limit: 1 })
+						testList({ gt: start, lte: end, reverse: true, limit: 2 })
+						testList({ gt: start, lte: end, reverse: true, limit: 40 })
+					}
+					testList({ gte: start, lte: end })
+					testList({ gte: start, lte: end, limit: 1 })
+					testList({ gte: start, lte: end, limit: 2 })
+					testList({ gte: start, lte: end, limit: 40 })
+					testList({ gte: start, lte: end, reverse: true })
+					testList({ gte: start, lte: end, reverse: true, limit: 1 })
+					testList({ gte: start, lte: end, reverse: true, limit: 2 })
+					testList({ gte: start, lte: end, reverse: true, limit: 40 })
+				}
+			}
+		})
 	})
 })
 
