@@ -1,15 +1,3 @@
-/*
-
-- better types.
-- tuple keys
-- list query
----
-- count aggregation
-- generalize to GiST
-- interval range query
-
-*/
-
 import { orderedArray } from "@ccorcos/ordered-array"
 import { cloneDeep } from "lodash"
 
@@ -38,7 +26,7 @@ type NodeCursor<K, V> = {
 	indexPath: number[]
 }
 
-export class BinaryPlusTree2<K = string | number, V = any> {
+export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 	// In preparation for storing nodes in a key-value database.
 	nodes: { [key: Key]: BranchNode<K> | LeafNode<K, V> | undefined } = {}
 
@@ -215,56 +203,155 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 		}
 	}
 
-	// HERE
-	// - reverse arg
-	// - rigorous property testing.
 	list = (args: {
-		start?: K
-		end?: K
+		gt?: K
+		gte?: K
+		lt?: K
+		lte?: K
 		limit?: number
-		// reverse?: boolean
+		reverse?: boolean
 	}) => {
-		if (
-			args.start !== undefined &&
-			args.end !== undefined &&
-			this.compareKey(args.start, args.end) >= 0
-		) {
-			throw new Error("Invalid bounds.")
+		const results: { key: K; value: V }[] = []
+
+		if (args.gt && args.gte) throw new Error("Invalid bounds: {gt, gte}")
+		if (args.lt && args.lte) throw new Error("Invalid bounds: {lt, lte}")
+
+		const start = args.gt || args.gte
+		const startOpen = Boolean(args.gt)
+		const end = args.lt || args.lte
+		const endOpen = Boolean(args.lt)
+
+		if (start !== undefined && end !== undefined) {
+			const comp = this.compareKey(start, end)
+			if (comp > 0) {
+				console.warn("Invalid bounds.", args)
+				return results
+			}
+			if (comp === 0 && (startOpen || endOpen)) {
+				console.warn("Invalid bounds.", args)
+				return results
+			}
 		}
 
 		let startKey: NodeCursor<K, V> | undefined
 		let endKey: NodeCursor<K, V> | undefined
-		if (args.start) {
-			startKey = this.findPath(args.start)
+		if (start) {
+			startKey = this.findPath(start)
 		} else {
 			startKey = this.startCursor()
 		}
-		if (args.end) {
-			endKey = this.findPath(args.end)
+		if (end) {
+			endKey = this.findPath(end)
 		} else {
 			endKey = this.endCursor()
 		}
 
-		// if (!args.reverse) {
-		const results: { key: K; value: V }[] = []
+		if (args.reverse) {
+			const leaf = endKey.nodePath[0] as LeafNode<K, V>
+			if (end) {
+				const result = this.leafValues.search(leaf.values, end)
+				const index =
+					result.found !== undefined
+						? endOpen
+							? result.found
+							: result.found + 1
+						: result.closest
+				results.push(...leaf.values.slice(0, index).reverse())
+			} else {
+				results.push(...leaf.values.slice(0).reverse())
+			}
+
+			// Start bound in the same leaf.
+			if (start && this.compareKey(results[0].key, start) <= 0) {
+				const result = this.leafValues.search(results, start)
+				if (result.found) {
+					const startIndex = startOpen ? result.found + 1 : result.found
+					results.splice(0, startIndex)
+				}
+				if (result.closest) {
+					results.splice(0, result.closest)
+				}
+
+				// Start and limit bound
+				if (args.limit && results.length >= args.limit) {
+					const deleteCount = results.length - args.limit
+					results.splice(0, deleteCount)
+					return results
+				}
+				return results
+			}
+
+			// Limit bound
+			if (args.limit && results.length >= args.limit) {
+				const deleteCount = results.length - args.limit
+				results.splice(0, deleteCount)
+				return results
+			}
+
+			let cursor: NodeCursor<K, V> | undefined = endKey
+			while ((cursor = this.prevCursor(cursor))) {
+				const leaf = cursor.nodePath[0] as LeafNode<K, V>
+
+				results.push(...leaf.values)
+
+				// Start bound
+				if (
+					start &&
+					this.compareKey(results[results.length - 1].key, start) >= 0
+				) {
+					const result = this.leafValues.search(results, start)
+					if (result.found) {
+						const startIndex = startOpen ? result.found + 1 : result.found
+						results.splice(0, startIndex)
+					}
+					if (result.closest) {
+						results.splice(0, result.closest)
+					}
+
+					// Start and limit bound
+					if (args.limit && results.length >= args.limit) {
+						const deleteCount = results.length - args.limit
+						results.splice(0, deleteCount)
+						return results
+					}
+					return results
+				}
+
+				// Limit bound
+				if (args.limit && results.length >= args.limit) {
+					const deleteCount = results.length - args.limit
+					results.splice(0, deleteCount)
+					return results
+				}
+			}
+
+			return results
+		}
 
 		const leaf = startKey.nodePath[0] as LeafNode<K, V>
-		if (args.start) {
-			const result = this.leafValues.search(leaf.values, args.start)
-			const index = result.found !== undefined ? result.found : result.closest
+		if (start) {
+			const result = this.leafValues.search(leaf.values, start)
+			const index =
+				result.found !== undefined
+					? startOpen
+						? result.found + 1
+						: result.found
+					: result.closest
 			results.push(...leaf.values.slice(index))
 		} else {
 			results.push(...leaf.values)
 		}
 
-		// End bound
-		if (
-			args.end &&
-			this.compareKey(results[results.length - 1].key, args.end) >= 0
-		) {
-			const result = this.leafValues.search(results, args.end)
-			if (result.found) results.splice(result.found, results.length)
-			if (result.closest) results.splice(result.closest, results.length)
+		// End bound in the same leaf.
+		if (end && this.compareKey(results[results.length - 1].key, end) >= 0) {
+			const result = this.leafValues.search(results, end)
+			if (result.found) {
+				const endIndex = endOpen ? result.found + 1 : result.found
+				results.splice(endIndex, results.length)
+			}
+			if (result.closest) {
+				results.splice(result.closest, results.length)
+			}
 
 			// End and limit bound
 			if (args.limit && results.length >= args.limit) {
@@ -287,12 +374,12 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 			results.push(...leaf.values)
 
 			// End bound
-			if (
-				args.end &&
-				this.compareKey(results[results.length - 1].key, args.end) >= 0
-			) {
-				const result = this.leafValues.search(results, args.end)
-				if (result.found) results.splice(result.found, results.length)
+			if (end && this.compareKey(results[results.length - 1].key, end) >= 0) {
+				const result = this.leafValues.search(results, end)
+				if (result.found) {
+					const endIndex = endOpen ? result.found + 1 : result.found
+					results.splice(endIndex, results.length)
+				}
 				if (result.closest) results.splice(result.closest, results.length)
 
 				// End and limit bound
@@ -311,19 +398,6 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 		}
 
 		return results
-
-		// if (args.reverse) {
-		// 	if (!args.limit) return this.data.slice(startIndex, endIndex).reverse()
-		// 	return this.data
-		// 		.slice(Math.max(startIndex, endIndex - args.limit), endIndex)
-		// 		.reverse()
-		// }
-
-		// if (!args.limit) return this.data.slice(startIndex, endIndex)
-		// return this.data.slice(
-		// 	startIndex,
-		// 	Math.min(startIndex + args.limit, endIndex)
-		// )
 	}
 
 	set = (key: K, value: V) => {
@@ -680,7 +754,7 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 	}
 
 	clone() {
-		const cloned = new BinaryPlusTree2<K, V>(this.minSize, this.maxSize)
+		const cloned = new InMemoryBinaryPlusTree<K, V>(this.minSize, this.maxSize)
 		cloned.nodes = cloneDeep(this.nodes)
 		return cloned
 	}
