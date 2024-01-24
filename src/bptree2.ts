@@ -11,6 +11,7 @@
 */
 
 import { orderedArray } from "@ccorcos/ordered-array"
+import { cloneDeep } from "lodash"
 
 type Key = string | number
 
@@ -676,6 +677,12 @@ export class BinaryPlusTree2<K = string | number, V = any> {
 			node = nextNode
 		}
 		return depth
+	}
+
+	clone() {
+		const cloned = new BinaryPlusTree2<K, V>(this.minSize, this.maxSize)
+		cloned.nodes = cloneDeep(this.nodes)
+		return cloned
 	}
 }
 

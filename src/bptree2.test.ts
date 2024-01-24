@@ -1,6 +1,6 @@
 import { strict as assert } from "assert"
 import { jsonCodec } from "lexicodec"
-import { cloneDeep, sum, uniqWith } from "lodash"
+import { sum, uniqWith } from "lodash"
 import { describe, it } from "mocha"
 import { BinaryPlusTree2 } from "./bptree2"
 
@@ -392,7 +392,7 @@ describe("BinaryPlusTree2", () => {
 					const x = numbers[j]
 
 					// it(`Overwrite ${j}: ${x}`, () => {
-					const t = clone(tree)
+					const t = tree.clone()
 					t.set(x, x * 2)
 					verify(t)
 
@@ -410,7 +410,7 @@ describe("BinaryPlusTree2", () => {
 					const x = numbers[j]
 
 					// it(`Delete ${j} : ${x}`, () => {
-					const t = clone(tree)
+					const t = tree.clone()
 					t.delete(x)
 					try {
 						verify(t)
@@ -538,12 +538,6 @@ function inspect(tree: BinaryPlusTree2) {
 		)
 		.join("\n")
 	return str
-}
-
-function clone(tree: BinaryPlusTree2) {
-	const cloned = new BinaryPlusTree2(tree.minSize, tree.maxSize)
-	cloned.nodes = cloneDeep(tree.nodes)
-	return cloned
 }
 
 /** Check for node sizes. */

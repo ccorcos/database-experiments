@@ -11,7 +11,8 @@
 		"build": "tsc",
 		"typecheck": "tsc --noEmit",
 		"test": "mocha -r tsx './src/**/*.test.ts' --verbose",
-		"release": "./release.sh"
+		"release": "./release.sh",
+		"perf": "tsx src/performance.ts"
 	},
 	"keywords": [],
 	"author": "Chet Corcos <ccorcos@gmail.com>",
@@ -22,6 +23,7 @@
 		"@types/mocha": "whitecolor/mocha-types",
 		"@types/node": "^20.9.1",
 		"mocha": "^10.2.0",
+		"tinybench": "^2.6.0",
 		"tsx": "^4.1.2",
 		"typescript": "^5.2.2"
 	},
