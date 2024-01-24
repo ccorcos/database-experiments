@@ -1,8 +1,6 @@
 import { orderedArray } from "@ccorcos/ordered-array"
 import { cloneDeep } from "lodash"
 
-type Key = string | number
-
 export type BranchNode<K> = {
 	leaf?: false
 	id: string
@@ -27,8 +25,7 @@ type NodeCursor<K, V> = {
 }
 
 export class InMemoryBinaryPlusTree<K = string | number, V = any> {
-	// In preparation for storing nodes in a key-value database.
-	nodes: { [key: Key]: BranchNode<K> | LeafNode<K, V> | undefined } = {}
+	nodes = new Map<string, BranchNode<K> | LeafNode<K, V>>()
 
 	/**
 	 * minSize must be less than maxSize / 2.
@@ -62,7 +59,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 		const nodePath: (BranchNode<K> | LeafNode<K, V>)[] = []
 		const indexPath: number[] = []
 
-		const root = this.nodes["root"]
+		const root = this.nodes.get("root")
 		if (!root) return { nodePath, indexPath }
 		else nodePath.push(root)
 
@@ -79,7 +76,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			const childIndex =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.children[childIndex].childId
-			const child = this.nodes[childId]
+			const child = this.nodes.get(childId)
 			if (!child) throw Error("Missing child node.")
 			nodePath.unshift(child)
 			indexPath.unshift(childIndex)
@@ -90,7 +87,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 		const { nodePath } = this.findPath(key)
 		if (nodePath.length === 0) return
 
-		const root = this.nodes["root"]
+		const root = this.nodes.get("root")
 		if (!root) return // Empty tree
 
 		const leaf = nodePath[0] as LeafNode<K, V>
@@ -104,7 +101,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			nodePath: [],
 			indexPath: [],
 		}
-		const root = this.nodes["root"]
+		const root = this.nodes.get("root")
 		if (!root) return cursor
 		cursor.nodePath.push(root)
 
@@ -113,7 +110,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			if (node.leaf) break
 			const childIndex = 0
 			const childId = node.children[childIndex].childId
-			const child = this.nodes[childId]
+			const child = this.nodes.get(childId)
 			if (!child) throw new Error("Broken.")
 			cursor.nodePath.unshift(child)
 			cursor.indexPath.unshift(childIndex)
@@ -142,7 +139,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 				const parent = cursor.nodePath[j + 1] as BranchNode<K>
 				const parentIndex = cursor.indexPath[j]
 				const childId = parent.children[parentIndex].childId
-				const child = this.nodes[childId]
+				const child = this.nodes.get(childId)
 				if (!child) throw new Error("Broken.")
 				cursor.nodePath[j] = child
 				if (j > 0) cursor.indexPath[j - 1] = 0
@@ -156,7 +153,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			nodePath: [],
 			indexPath: [],
 		}
-		const root = this.nodes["root"]
+		const root = this.nodes.get("root")
 		if (!root) return cursor
 		cursor.nodePath.push(root)
 		while (true) {
@@ -164,7 +161,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			if (node.leaf) break
 			const childIndex = node.children.length - 1
 			const childId = node.children[childIndex].childId
-			const child = this.nodes[childId]
+			const child = this.nodes.get(childId)
 			if (!child) throw new Error("Broken.")
 			cursor.nodePath.unshift(child)
 			cursor.indexPath.unshift(childIndex)
@@ -191,7 +188,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 				const parent = cursor.nodePath[j + 1] as BranchNode<K>
 				const parentIndex = cursor.indexPath[j]
 				const childId = parent.children[parentIndex].childId
-				const child = this.nodes[childId]
+				const child = this.nodes.get(childId)
 				if (!child) throw new Error("Broken.")
 				cursor.nodePath[j] = child
 				if (j > 0)
@@ -405,11 +402,11 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 
 		// Intitalize root node.
 		if (nodePath.length === 0) {
-			this.nodes["root"] = {
+			this.nodes.set("root", {
 				leaf: true,
 				id: "root",
 				values: [{ key, value }],
-			}
+			})
 			return
 		}
 
@@ -434,7 +431,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 					leaf: true,
 					values: rightValues,
 				}
-				this.nodes[rightNode.id] = rightNode
+				this.nodes.set(rightNode.id, rightNode)
 				const rightMinKey = rightNode.values[0].key
 
 				if (node.id === "root") {
@@ -444,7 +441,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 						// NOTE: this array was mutated above.
 						values: node.values,
 					}
-					this.nodes[leftNode.id] = leftNode
+					this.nodes.set(leftNode.id, leftNode)
 					const rootNode: BranchNode<K> = {
 						id: "root",
 						leaf: false,
@@ -453,7 +450,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 							{ minKey: rightMinKey, childId: rightNode.id },
 						],
 					}
-					this.nodes["root"] = rootNode
+					this.nodes.set("root", rootNode)
 					break
 				}
 
@@ -478,7 +475,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 				id: randomId(),
 				children: rightChildren,
 			}
-			this.nodes[rightNode.id] = rightNode
+			this.nodes.set(rightNode.id, rightNode)
 			const rightMinKey = rightNode.children[0].minKey
 
 			if (node.id === "root") {
@@ -487,7 +484,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 					// NOTE: this array was mutated above.
 					children: node.children,
 				}
-				this.nodes[leftNode.id] = leftNode
+				this.nodes.set(leftNode.id, leftNode)
 				const rootNode: BranchNode<K> = {
 					id: "root",
 					children: [
@@ -495,7 +492,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 						{ minKey: rightMinKey, childId: rightNode.id },
 					],
 				}
-				this.nodes["root"] = rootNode
+				this.nodes.set("root", rootNode)
 				break
 			}
 
@@ -515,7 +512,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 	}
 
 	delete = (key: K) => {
-		const root = this.nodes["root"]
+		const root = this.nodes.get("root")
 		if (!root) return
 
 		// Delete from leaf node.
@@ -535,7 +532,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			const index =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.children[index].childId
-			const child = this.nodes[childId]
+			const child = this.nodes.get(childId)
 			if (!child) throw Error("Missing child node.")
 			nodePath.unshift(child)
 			indexPath.unshift(index)
@@ -550,17 +547,17 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 
 				// Cleanup an empty root node.
 				if (node.children.length === 0) {
-					delete this.nodes["root"]
+					this.nodes.delete("root")
 					return
 				}
 
 				// A root node with one child becomes its child.
 				if (node.children.length === 1) {
 					const childId = node.children[0].childId
-					const childNode = this.nodes[childId]
+					const childNode = this.nodes.get(childId)
 					if (!childNode) throw new Error("Broken.")
-					this.nodes["root"] = { ...childNode, id: "root" }
-					delete this.nodes[childId]
+					this.nodes.set("root", { ...childNode, id: "root" })
+					this.nodes.get(childId)
 				}
 
 				return
@@ -591,7 +588,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			if (node.leaf) {
 				if (parentIndex === 0) {
 					const rightId = parent.children[parentIndex + 1].childId
-					const rightSibling = this.nodes[rightId] as typeof node
+					const rightSibling = this.nodes.get(rightId) as typeof node
 					if (!rightSibling) throw new Error("Broken.")
 
 					const combinedSize = node.values.length + rightSibling.values.length
@@ -619,7 +616,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 					node.values.push(...rightSibling.values)
 					// Delete rightSibling
 					parent.children.splice(1, 1)
-					delete this.nodes[rightSibling.id]
+					this.nodes.delete(rightSibling.id)
 					// Update parent minKey
 					const leftMost = parent.children[0].minKey === null
 					const minKey = leftMost ? null : node.values[0].key
@@ -631,7 +628,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 				}
 
 				const leftId = parent.children[parentIndex - 1].childId
-				const leftSibling = this.nodes[leftId] as typeof node
+				const leftSibling = this.nodes.get(leftId) as typeof node
 				if (!leftSibling) throw new Error("Broken.")
 
 				const combinedSize = leftSibling.values.length + node.values.length
@@ -655,7 +652,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 				leftSibling.values.push(...node.values)
 				// Delete the node
 				parent.children.splice(parentIndex, 1)
-				delete this.nodes[node.id]
+				this.nodes.delete(node.id)
 				// No need to update minKey because we added to the right.
 
 				// Recur
@@ -666,7 +663,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			// Merge or redistribute branch nodes.
 			if (parentIndex === 0) {
 				const rightId = parent.children[parentIndex + 1].childId
-				const rightSibling = this.nodes[rightId] as typeof node
+				const rightSibling = this.nodes.get(rightId) as typeof node
 				if (!rightSibling) throw new Error("Broken.")
 
 				const combinedSize = node.children.length + rightSibling.children.length
@@ -694,7 +691,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 				node.children.push(...rightSibling.children)
 				// Delete rightSibling
 				parent.children.splice(1, 1)
-				delete this.nodes[rightSibling.id]
+				this.nodes.delete(rightSibling.id)
 				// Update parent minKey
 				const leftMost = parent.children[0].minKey === null
 				const minKey = leftMost ? null : node.children[0].minKey
@@ -706,7 +703,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			}
 
 			const leftId = parent.children[parentIndex - 1].childId
-			const leftSibling = this.nodes[leftId] as typeof node
+			const leftSibling = this.nodes.get(leftId) as typeof node
 			if (!leftSibling) throw new Error("Broken.")
 
 			const combinedSize = leftSibling.children.length + node.children.length
@@ -730,7 +727,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			leftSibling.children.push(...node.children)
 			// Delete the node
 			parent.children.splice(parentIndex, 1)
-			delete this.nodes[node.id]
+			this.nodes.delete(node.id)
 			// No need to update minKey because we added to the right.
 
 			// Recur
@@ -740,13 +737,13 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 	}
 
 	depth() {
-		const root = this.nodes["root"]
+		const root = this.nodes.get("root")
 		if (!root) return 0
 		let depth = 1
 		let node = root
 		while (!node.leaf) {
 			depth += 1
-			const nextNode = this.nodes[node.children[0].childId]
+			const nextNode = this.nodes.get(node.children[0].childId)
 			if (!nextNode) throw new Error("Broken.")
 			node = nextNode
 		}
