@@ -169,12 +169,3 @@ test2()
 // sqlite vs tuple bptree
 // sqlite vs reducer tree
 // sqlite vs interval tree
-
-// btree2 -> btree-sync with externalized storage, use SQLite.
-// btree-lock -> btree-async with better types, jsonCodec, and list query.
-
-// btree-reducer-sync
-// btree-reducer-async
-
-// itree-sync
-// itree-async
