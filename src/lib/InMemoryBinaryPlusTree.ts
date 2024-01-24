@@ -200,14 +200,16 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 		}
 	}
 
-	list = (args: {
-		gt?: K
-		gte?: K
-		lt?: K
-		lte?: K
-		limit?: number
-		reverse?: boolean
-	}) => {
+	list = (
+		args: {
+			gt?: K
+			gte?: K
+			lt?: K
+			lte?: K
+			limit?: number
+			reverse?: boolean
+		} = {}
+	) => {
 		const results: { key: K; value: V }[] = []
 
 		if (args.gt && args.gte) throw new Error("Invalid bounds: {gt, gte}")

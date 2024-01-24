@@ -300,11 +300,11 @@ With 100k items already, to delete 1000 items, a btree is about 3x slower.
 
 I want to do some more performance testing with SQLite and LevelDb for comparison. Will need to polish things up to get there.
 
-## Synchronous B+ Tree (lib/bptree-sync.ts)
+## In-Memory B+ Tree (lib/InMemoryBinaryPlusTree.ts)
 
-Staring from bptree2.ts
-
-With externalized storage, use SQLite as a storage option.
+Starting from bptree2.ts
+- Improved list() to allow open/closed bounds and reverse.
+- Using a Map instead of an object to store nodes.
 
 
 
