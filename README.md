@@ -257,3 +257,46 @@ This [CMU class 15-826](https://www.cs.cmu.edu/~christos/courses/826.F19/FOILS-p
 The most common usecase for an interval tree is for date range queries, e.g. "get me all of the events that overlap with this week". However, these dates are usually translated into a numerical value so that doesn't help us much.
 
 The concept isn't all that complicated though... We have a tree sorted by start, and propagate the maxEnd for the node all the way up the tree.
+
+## Performance Testing - Round 1
+
+For 10k items, the bptree is just barely faster than an ordered array, but they're pretty comparable.
+
+```sh
+┌─────────┬──────────────┬────────────────────────────────┬─────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name                      │ ops/sec │ Margin   │ Samples │
+├─────────┼──────────────┼────────────────────────────────┼─────────┼──────────┼─────────┤
+│ 0       │ '004.559ms'  │ 'insert 10_000 ordered array'  │ '219'   │ '±0.36%' │ 439     │
+│ 1       │ '004.037ms'  │ 'insert 10_000 bptree2 50-100' │ '247'   │ '±1.67%' │ 496     │
+└─────────┴──────────────┴────────────────────────────────┴─────────┴──────────┴─────────┘
+```
+
+For 100k items, a bptree is almost 10x faster than an ordered arrray.
+
+```sh
+┌─────────┬──────────────┬──────────────────────────────────┬─────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name                        │ ops/sec │ Margin   │ Samples │
+├─────────┼──────────────┼──────────────────────────────────┼─────────┼──────────┼─────────┤
+│ 0       │ '401.652ms'  │ 'insert 100_000 ordered array'   │ '2'     │ '±3.47%' │ 5       │
+│ 1       │ '070.908ms'  │ 'insert 100_000 bptree2 10-20'   │ '14'    │ '±2.89%' │ 29      │
+│ 2       │ '052.286ms'  │ 'insert 100_000 bptree2 50-100'  │ '19'    │ '±2.06%' │ 39      │
+│ 3       │ '051.514ms'  │ 'insert 100_000 bptree2 100-200' │ '19'    │ '±1.85%' │ 39      │
+└─────────┴──────────────┴──────────────────────────────────┴─────────┴──────────┴─────────┘
+```
+
+With 100k items already, to insert 1000 more items, a btree is about 20x faster than an array.
+With 100k items already, to delete 1000 items, a btree is about 3x slower.
+
+```sh
+┌─────────┬──────────────┬────────────────────────────────────────┬─────────┬───────────┬─────────┐
+│ (index) │ Average Time │ Task Name                              │ ops/sec │ Margin    │ Samples │
+├─────────┼──────────────┼────────────────────────────────────────┼─────────┼───────────┼─────────┤
+│ 0       │ '012.094ms'  │ 'insert 1000 more from array 100k'     │ '82'    │ '±23.60%' │ 167     │
+│ 1       │ '557.679μs'  │ 'insert 1000 more bptree2 50-100 100k' │ '1,793' │ '±0.52%'  │ 3587    │
+│ 2       │ '169.889μs'  │ 'delete 1000 more from array 100k'     │ '5,886' │ '±0.22%'  │ 11773   │
+│ 3       │ '547.311μs'  │ 'delete 1000 more bptree2 50-100 100k' │ '1,827' │ '±0.33%'  │ 3655    │
+└─────────┴──────────────┴────────────────────────────────────────┴─────────┴───────────┴─────────┘
+```
+
+I want to do some more performance testing with SQLite and LevelDb for comparison. Will need to polish things up to get there.
+

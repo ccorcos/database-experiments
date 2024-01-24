@@ -3,11 +3,6 @@ import { sampleSize, shuffle } from "lodash"
 import { Bench } from "tinybench"
 import { BinaryPlusTree2 } from "./bptree2"
 
-// bptree with sqlite vs bptree with leveldb vs sqlite vs leveldb
-// sqlite vs tuple bptree
-// sqlite vs reducer tree
-// sqlite vs interval tree
-
 function prettyNs(timeNs: number) {
 	const round = (n: number) =>
 		(Math.round(n * 1000) / 1000).toFixed(3).padStart(7, "0")
@@ -168,4 +163,18 @@ async function test3() {
 	// └─────────┴──────────────┴────────────────────────────────────────┴─────────┴───────────┴─────────┘
 }
 
-test3()
+test2()
+
+// bptree with sqlite vs bptree with leveldb vs sqlite vs leveldb
+// sqlite vs tuple bptree
+// sqlite vs reducer tree
+// sqlite vs interval tree
+
+// btree2 -> btree-sync with externalized storage, use SQLite.
+// btree-lock -> btree-async with better types, jsonCodec, and list query.
+
+// btree-reducer-sync
+// btree-reducer-async
+
+// itree-sync
+// itree-async
