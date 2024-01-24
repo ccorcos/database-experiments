@@ -213,13 +213,25 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 	) => {
 		const results: { key: K; value: V }[] = []
 
-		if (args.gt && args.gte) throw new Error("Invalid bounds: {gt, gte}")
-		if (args.lt && args.lte) throw new Error("Invalid bounds: {lt, lte}")
+		if (args.gt !== undefined && args.gte !== undefined)
+			throw new Error("Invalid bounds: {gt, gte}")
+		if (args.lt !== undefined && args.lte !== undefined)
+			throw new Error("Invalid bounds: {lt, lte}")
 
-		const start = args.gt || args.gte
-		const startOpen = Boolean(args.gt)
-		const end = args.lt || args.lte
-		const endOpen = Boolean(args.lt)
+		const start =
+			args.gt !== undefined
+				? args.gt
+				: args.gte !== undefined
+				? args.gte
+				: undefined
+		const startOpen = args.gt !== undefined
+		const end =
+			args.lt !== undefined
+				? args.lt
+				: args.lte !== undefined
+				? args.lte
+				: undefined
+		const endOpen = args.lt !== undefined
 
 		if (start !== undefined && end !== undefined) {
 			const comp = this.compareKey(start, end)
@@ -235,12 +247,12 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 
 		let startKey: NodeCursor<K, V> | undefined
 		let endKey: NodeCursor<K, V> | undefined
-		if (start) {
+		if (start !== undefined) {
 			startKey = this.findPath(start)
 		} else {
 			startKey = this.startCursor()
 		}
-		if (end) {
+		if (end !== undefined) {
 			endKey = this.findPath(end)
 		} else {
 			endKey = this.endCursor()
@@ -248,7 +260,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 
 		if (args.reverse) {
 			const leaf = endKey.nodePath[0] as LeafNode<K, V>
-			if (end) {
+			if (end !== undefined) {
 				const result = this.leafValues.search(leaf.values, end)
 				const index =
 					result.found !== undefined
@@ -262,7 +274,10 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			}
 
 			// Start bound in the same leaf.
-			if (start && this.compareKey(leaf.values[0].key, start) <= 0) {
+			if (
+				start !== undefined &&
+				this.compareKey(leaf.values[0].key, start) <= 0
+			) {
 				const result = this.leafValues.search(leaf.values, start)
 				if (result.found !== undefined) {
 					const startIndex = startOpen
@@ -294,7 +309,10 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 				results.push(...leaf.values.slice(0).reverse())
 
 				// Start bound
-				if (start && this.compareKey(leaf.values[0].key, start) <= 0) {
+				if (
+					start !== undefined &&
+					this.compareKey(leaf.values[0].key, start) <= 0
+				) {
 					const result = this.leafValues.search(leaf.values, start)
 					if (result.found !== undefined) {
 						const startIndex = startOpen
@@ -325,7 +343,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 
 		let startOffset = 0
 		const leaf = startKey.nodePath[0] as LeafNode<K, V>
-		if (start) {
+		if (start !== undefined) {
 			const result = this.leafValues.search(leaf.values, start)
 			const index =
 				result.found !== undefined
@@ -341,17 +359,18 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 
 		// End bound in the same leaf.
 		if (
-			end &&
+			end !== undefined &&
 			this.compareKey(leaf.values[leaf.values.length - 1].key, end) >= 0
 		) {
 			const result = this.leafValues.search(leaf.values, end)
+
 			if (result.found !== undefined) {
 				const endIndex = endOpen
 					? result.found - startOffset
 					: result.found + 1 - startOffset
 				results.splice(endIndex, results.length)
 			} else {
-				results.splice(result.closest, results.length)
+				results.splice(result.closest - startOffset, results.length)
 			}
 
 			// End and limit bound
@@ -376,7 +395,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 
 			// End bound
 			if (
-				end &&
+				end !== undefined &&
 				this.compareKey(leaf.values[leaf.values.length - 1].key, end) >= 0
 			) {
 				const result = this.leafValues.search(results, end)
