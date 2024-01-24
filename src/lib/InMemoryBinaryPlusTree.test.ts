@@ -199,7 +199,7 @@ const structuralTests24 = `
 `
 
 describe("InMemoryBinaryPlusTree", () => {
-	describe.only("structural tests 2-4", () => {
+	describe("structural tests 2-4", () => {
 		const tree = new InMemoryBinaryPlusTree(2, 4)
 		test(tree, structuralTests24)
 	})
@@ -312,7 +312,7 @@ describe("InMemoryBinaryPlusTree", () => {
 		}
 	})
 
-	it("list", () => {
+	it.only("list", () => {
 		// All even numbers from 0 to 1998
 		const numbers = Array(1000)
 			.fill(0)
@@ -345,6 +345,8 @@ describe("InMemoryBinaryPlusTree", () => {
 				start = 0
 			}
 
+			start = Math.max(start, 0)
+
 			let end: number
 			if (args.lt !== undefined && args.lt % 2 === 0) {
 				end = args.lt - 2
@@ -357,6 +359,8 @@ describe("InMemoryBinaryPlusTree", () => {
 			} else {
 				end = 1998
 			}
+
+			end = Math.min(end, 1998)
 
 			let count = 0
 			const result: { key: number; value: number }[] = []
@@ -395,6 +399,11 @@ describe("InMemoryBinaryPlusTree", () => {
 
 		// Entire thing
 		testList()
+		testList({ limit: 2 })
+		testList({ limit: 40 })
+		testList({ reverse: true })
+		testList({ reverse: true, limit: 40 })
+		testList({ reverse: true, limit: 4 })
 
 		// Less than odd.
 		testList({ lt: 9 })

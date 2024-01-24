@@ -50,6 +50,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 		}
 		return this.compareKey(a, b)
 	}
+
 	private branchChildren = orderedArray(
 		(item: { minKey: K | null }) => item.minKey,
 		this.compareBranchKey
@@ -174,11 +175,11 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			nodePath: [...cursor.nodePath],
 			indexPath: [...cursor.indexPath],
 		}
-		for (let i = 0; i < cursor.nodePath.length; i++) {
+		for (let i = 0; i < cursor.nodePath.length - 1; i++) {
 			// Find the point in the path where we need to go down a sibling branch.
 			const parentIndex = cursor.indexPath[i]
 			const prevIndex = parentIndex - 1
-			if (prevIndex >= 0) continue
+			if (prevIndex < 0) continue
 
 			// Here's a branch.
 			cursor.indexPath[i] = prevIndex
@@ -261,20 +262,20 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			}
 
 			// Start bound in the same leaf.
-			if (start && this.compareKey(results[0].key, start) <= 0) {
-				const result = this.leafValues.search(results, start)
-				if (result.found) {
-					const startIndex = startOpen ? result.found + 1 : result.found
-					results.splice(0, startIndex)
-				}
-				if (result.closest) {
-					results.splice(0, result.closest)
+			if (start && this.compareKey(leaf.values[0].key, start) <= 0) {
+				const result = this.leafValues.search(leaf.values, start)
+				if (result.found !== undefined) {
+					const startIndex = startOpen
+						? results.length - result.found - 1
+						: results.length - result.found
+					results.splice(startIndex, results.length)
+				} else {
+					results.splice(results.length - result.closest, results.length)
 				}
 
 				// Start and limit bound
 				if (args.limit && results.length >= args.limit) {
-					const deleteCount = results.length - args.limit
-					results.splice(0, deleteCount)
+					results.splice(args.limit, results.length)
 					return results
 				}
 				return results
@@ -282,8 +283,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 
 			// Limit bound
 			if (args.limit && results.length >= args.limit) {
-				const deleteCount = results.length - args.limit
-				results.splice(0, deleteCount)
+				results.splice(args.limit, results.length)
 				return results
 			}
 
@@ -291,26 +291,23 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			while ((cursor = this.prevCursor(cursor))) {
 				const leaf = cursor.nodePath[0] as LeafNode<K, V>
 
-				results.push(...leaf.values)
+				results.push(...leaf.values.slice(0).reverse())
 
 				// Start bound
-				if (
-					start &&
-					this.compareKey(results[results.length - 1].key, start) >= 0
-				) {
-					const result = this.leafValues.search(results, start)
-					if (result.found) {
-						const startIndex = startOpen ? result.found + 1 : result.found
-						results.splice(0, startIndex)
-					}
-					if (result.closest) {
-						results.splice(0, result.closest)
+				if (start && this.compareKey(leaf.values[0].key, start) <= 0) {
+					const result = this.leafValues.search(leaf.values, start)
+					if (result.found !== undefined) {
+						const startIndex = startOpen
+							? results.length - result.found - 1
+							: results.length - result.found
+						results.splice(startIndex, results.length)
+					} else {
+						results.splice(results.length - result.closest, results.length)
 					}
 
 					// Start and limit bound
 					if (args.limit && results.length >= args.limit) {
-						const deleteCount = results.length - args.limit
-						results.splice(0, deleteCount)
+						results.splice(args.limit, results.length)
 						return results
 					}
 					return results
@@ -318,8 +315,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 
 				// Limit bound
 				if (args.limit && results.length >= args.limit) {
-					const deleteCount = results.length - args.limit
-					results.splice(0, deleteCount)
+					results.splice(args.limit, results.length)
 					return results
 				}
 			}
@@ -327,6 +323,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			return results
 		}
 
+		let startOffset = 0
 		const leaf = startKey.nodePath[0] as LeafNode<K, V>
 		if (start) {
 			const result = this.leafValues.search(leaf.values, start)
@@ -336,19 +333,24 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 						? result.found + 1
 						: result.found
 					: result.closest
+			startOffset = index
 			results.push(...leaf.values.slice(index))
 		} else {
 			results.push(...leaf.values)
 		}
 
 		// End bound in the same leaf.
-		if (end && this.compareKey(results[results.length - 1].key, end) >= 0) {
-			const result = this.leafValues.search(results, end)
-			if (result.found) {
-				const endIndex = endOpen ? result.found + 1 : result.found
+		if (
+			end &&
+			this.compareKey(leaf.values[leaf.values.length - 1].key, end) >= 0
+		) {
+			const result = this.leafValues.search(leaf.values, end)
+			if (result.found !== undefined) {
+				const endIndex = endOpen
+					? result.found - startOffset
+					: result.found + 1 - startOffset
 				results.splice(endIndex, results.length)
-			}
-			if (result.closest) {
+			} else {
 				results.splice(result.closest, results.length)
 			}
 
@@ -373,13 +375,17 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			results.push(...leaf.values)
 
 			// End bound
-			if (end && this.compareKey(results[results.length - 1].key, end) >= 0) {
+			if (
+				end &&
+				this.compareKey(leaf.values[leaf.values.length - 1].key, end) >= 0
+			) {
 				const result = this.leafValues.search(results, end)
-				if (result.found) {
-					const endIndex = endOpen ? result.found + 1 : result.found
+				if (result.found !== undefined) {
+					const endIndex = endOpen ? result.found : result.found + 1
 					results.splice(endIndex, results.length)
+				} else {
+					results.splice(result.closest, results.length)
 				}
-				if (result.closest) results.splice(result.closest, results.length)
 
 				// End and limit bound
 				if (args.limit && results.length >= args.limit) {
@@ -559,7 +565,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 					const childNode = this.nodes.get(childId)
 					if (!childNode) throw new Error("Broken.")
 					this.nodes.set("root", { ...childNode, id: "root" })
-					this.nodes.get(childId)
+					this.nodes.delete(childId)
 				}
 
 				return
