@@ -1,18 +1,5 @@
-/*
-
-B+ tree with latch crabbing locking
-https://stackoverflow.com/questions/52058099/making-a-btree-concurrent-c
-
-I'm not sure latch crabbing is really that useful once we start having batch writes and list reads.
-Probably better just to have a single read and write lock.
-
-remove depth and clone from in-memory tree?
-better types, jsonCodec, and list query.
-
-*/
-
-import { RWLockMap } from "@ccorcos/lock"
 import { orderedArray } from "@ccorcos/ordered-array"
+import { cloneDeep } from "lodash"
 
 // Used to store tree nodes.
 export type KeyValueStorage<V = any> = {
@@ -21,85 +8,6 @@ export type KeyValueStorage<V = any> = {
 		set?: { key: string; value: V }[]
 		delete?: string[]
 	}) => Promise<void>
-}
-
-// This encapsulates KeyValueStorage along with locks.
-export class KeyValueDatabase<V = any> {
-	constructor(public storage: KeyValueStorage<V>) {}
-
-	async get(key: string) {
-		return await this.storage.get(key)
-	}
-
-	async write(tx: { set?: { key: string; value: V }[]; delete?: string[] }) {
-		await this.storage.write(tx)
-	}
-
-	locks = new RWLockMap()
-
-	transact() {
-		return new KeyValueTransaction(this)
-	}
-}
-
-export class KeyValueTransaction<V> {
-	locks = new Set<() => void>()
-	cache: { [key: string]: V | undefined } = {}
-	sets: { [key: string]: V } = {}
-	deletes = new Set<string>()
-
-	constructor(public kv: KeyValueDatabase<V>) {}
-
-	async readLock(key: string) {
-		// console.log("READ", key)
-		const release = await this.kv.locks.read(key)
-		this.locks.add(release)
-		return () => {
-			this.locks.delete(release)
-			release()
-		}
-	}
-
-	async writeLock(key: string) {
-		// console.trace("WRITE", key)
-		const release = await this.kv.locks.write(key)
-		this.locks.add(release)
-		return () => {
-			this.locks.delete(release)
-			release()
-		}
-	}
-
-	async get(key: string): Promise<V | undefined> {
-		if (key in this.cache) return this.cache[key]
-		const value = await this.kv.get(key)
-		this.cache[key] = value
-		return value
-	}
-
-	set(key: string, value: V) {
-		this.sets[key] = value
-		this.cache[key] = value
-		this.deletes.delete(key)
-	}
-
-	delete(key: string) {
-		this.cache[key] = undefined
-		delete this.sets[key]
-		this.deletes.add(key)
-	}
-
-	release() {
-		for (const release of this.locks) release()
-	}
-
-	async commit() {
-		await this.kv.write({
-			set: Object.entries(this.sets).map(([key, value]) => ({ key, value })),
-			delete: Array.from(this.deletes),
-		})
-		this.release()
-	}
 }
 
 export type BranchNode<K> = {
@@ -114,34 +22,30 @@ export type LeafNode<K, V> = {
 	values: { key: K; value: V }[]
 }
 
-type NodeCursor<K, V> = {
-	nodePath: (BranchNode<K> | LeafNode<K, V>)[]
-	indexPath: number[]
-}
-
 function compare(a: any, b: any) {
 	if (a === b) return 0
 	if (a > b) return 1
 	return -1
 }
 
+type NodeCursor<K, V> = {
+	nodePath: (BranchNode<K> | LeafNode<K, V>)[]
+	indexPath: number[]
+}
+
 export class AsyncBinaryPlusTree<K = string | number, V = any> {
+	nodes = new Map<string, BranchNode<K> | LeafNode<K, V>>()
+
 	/**
 	 * minSize must be less than maxSize / 2.
 	 */
 	constructor(
-		storage: KeyValueStorage<BranchNode<K> | LeafNode<K, V>>,
 		public minSize: number,
 		public maxSize: number,
 		public compareKey: (a: K, b: K) => number = compare
 	) {
 		if (minSize > maxSize / 2) throw new Error("Invalid tree size.")
-		this.kv = new KeyValueDatabase(storage)
 	}
-
-	kv: KeyValueDatabase
-
-	locks = new RWLockMap()
 
 	private leafValues = orderedArray(
 		(item: { key: K }) => item.key,
@@ -161,499 +65,734 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 		this.compareBranchKey
 	)
 
-	// Commit transaction for read-concurrency checks.
-	async get(key: K): Promise<V | undefined> {
-		const tx = this.kv.transact()
+	private findPath(key: K): NodeCursor<K, V> {
+		const nodePath: (BranchNode<K> | LeafNode<K, V>)[] = []
+		const indexPath: number[] = []
 
-		let releaseNode = await tx.readLock("root")
-		const root = await tx.get("root")
-		if (!root) {
-			tx.release()
-			return // Empty tree
-		}
+		const root = this.nodes.get("root")
+		if (!root) return { nodePath, indexPath }
+		else nodePath.push(root)
 
-		let node = root
 		while (true) {
-			if (node.leaf) {
-				const result = this.leafValues.search(node.values, key)
-				if (result.found === undefined) {
-					tx.release()
-					return
-				}
-				tx.release()
-				return node.values[result.found].value
-			}
+			const node = nodePath[0]
+			if (node.leaf) return { nodePath, indexPath }
 
-			const result = this.branchChildren.search(node.values, key)
+			const result = this.branchChildren.search(node.children, key)
 
 			// Closest key that is at least as big as the key...
 			// So the closest should never be less than the minKey.
-			if (result.closest === 0) {
-				tx.release()
-				throw new Error("Broken.")
-			}
+			if (result.closest === 0) throw new Error("Broken.")
 
 			const childIndex =
 				result.found !== undefined ? result.found : result.closest - 1
-			const childId = node.values[childIndex].value
-
-			// Latch Crabbing
-			const releaseChild = await tx.readLock(childId)
-			const child = await tx.get(childId)
-			if (!child) {
-				tx.release()
-				throw Error("Missing child node.")
-			}
-
-			releaseNode()
-			node = child
-			releaseNode = releaseChild
-			continue
+			const childId = node.children[childIndex].childId
+			const child = this.nodes.get(childId)
+			if (!child) throw Error("Missing child node.")
+			nodePath.unshift(child)
+			indexPath.unshift(childIndex)
 		}
 	}
 
-	async set(key: K, value: V) {
-		const tx = this.kv.transact()
+	get = (key: K): V | undefined => {
+		const { nodePath } = this.findPath(key)
+		if (nodePath.length === 0) return
 
-		let releaseNode = await tx.writeLock("root")
-		const root = await tx.get("root")
+		const root = this.nodes.get("root")
+		if (!root) return // Empty tree
+
+		const leaf = nodePath[0] as LeafNode<K, V>
+		const result = this.leafValues.search(leaf.values, key)
+		if (result.found === undefined) return
+		return leaf.values[result.found].value
+	}
+
+	private startCursor() {
+		const cursor: NodeCursor<K, V> = {
+			nodePath: [],
+			indexPath: [],
+		}
+		const root = this.nodes.get("root")
+		if (!root) return cursor
+		cursor.nodePath.push(root)
+
+		while (true) {
+			const node = cursor.nodePath[0]
+			if (node.leaf) break
+			const childIndex = 0
+			const childId = node.children[childIndex].childId
+			const child = this.nodes.get(childId)
+			if (!child) throw new Error("Broken.")
+			cursor.nodePath.unshift(child)
+			cursor.indexPath.unshift(childIndex)
+		}
+		return cursor
+	}
+
+	private nextCursor(cursor: NodeCursor<K, V>): NodeCursor<K, V> | undefined {
+		// console.log(cursor)
+		cursor = {
+			nodePath: [...cursor.nodePath],
+			indexPath: [...cursor.indexPath],
+		}
+		for (let i = 0; i < cursor.nodePath.length - 1; i++) {
+			// Find the point in the path where we need to go down a sibling branch.
+			const parent = cursor.nodePath[i + 1] as BranchNode<K>
+			const parentIndex = cursor.indexPath[i]
+			const nextIndex = parentIndex + 1
+			if (nextIndex >= parent.children.length) continue
+
+			// Here's a branch.
+			cursor.indexPath[i] = nextIndex
+
+			// Fix the rest of the cursor.
+			for (let j = i; j >= 0; j--) {
+				const parent = cursor.nodePath[j + 1] as BranchNode<K>
+				const parentIndex = cursor.indexPath[j]
+				const childId = parent.children[parentIndex].childId
+				const child = this.nodes.get(childId)
+				if (!child) throw new Error("Broken.")
+				cursor.nodePath[j] = child
+				if (j > 0) cursor.indexPath[j - 1] = 0
+			}
+			return cursor
+		}
+	}
+
+	private endCursor() {
+		const cursor: NodeCursor<K, V> = {
+			nodePath: [],
+			indexPath: [],
+		}
+		const root = this.nodes.get("root")
+		if (!root) return cursor
+		cursor.nodePath.push(root)
+		while (true) {
+			const node = cursor.nodePath[0]
+			if (node.leaf) break
+			const childIndex = node.children.length - 1
+			const childId = node.children[childIndex].childId
+			const child = this.nodes.get(childId)
+			if (!child) throw new Error("Broken.")
+			cursor.nodePath.unshift(child)
+			cursor.indexPath.unshift(childIndex)
+		}
+		return cursor
+	}
+
+	private prevCursor(cursor: NodeCursor<K, V>): NodeCursor<K, V> | undefined {
+		cursor = {
+			nodePath: [...cursor.nodePath],
+			indexPath: [...cursor.indexPath],
+		}
+		for (let i = 0; i < cursor.nodePath.length - 1; i++) {
+			// Find the point in the path where we need to go down a sibling branch.
+			const parentIndex = cursor.indexPath[i]
+			const prevIndex = parentIndex - 1
+			if (prevIndex < 0) continue
+
+			// Here's a branch.
+			cursor.indexPath[i] = prevIndex
+
+			// Fix the rest of the cursor.
+			for (let j = i; j >= 0; j--) {
+				const parent = cursor.nodePath[j + 1] as BranchNode<K>
+				const parentIndex = cursor.indexPath[j]
+				const childId = parent.children[parentIndex].childId
+				const child = this.nodes.get(childId)
+				if (!child) throw new Error("Broken.")
+				cursor.nodePath[j] = child
+				if (j > 0)
+					cursor.indexPath[j - 1] = child.leaf
+						? child.values.length - 1
+						: child.children.length - 1
+			}
+			return cursor
+		}
+	}
+
+	list = (
+		args: {
+			gt?: K
+			gte?: K
+			lt?: K
+			lte?: K
+			limit?: number
+			reverse?: boolean
+		} = {}
+	) => {
+		const results: { key: K; value: V }[] = []
+
+		if (args.gt !== undefined && args.gte !== undefined)
+			throw new Error("Invalid bounds: {gt, gte}")
+		if (args.lt !== undefined && args.lte !== undefined)
+			throw new Error("Invalid bounds: {lt, lte}")
+
+		const start =
+			args.gt !== undefined
+				? args.gt
+				: args.gte !== undefined
+				? args.gte
+				: undefined
+		const startOpen = args.gt !== undefined
+		const end =
+			args.lt !== undefined
+				? args.lt
+				: args.lte !== undefined
+				? args.lte
+				: undefined
+		const endOpen = args.lt !== undefined
+
+		if (start !== undefined && end !== undefined) {
+			const comp = this.compareKey(start, end)
+			if (comp > 0) {
+				console.warn("Invalid bounds.", args)
+				return results
+			}
+			if (comp === 0 && (startOpen || endOpen)) {
+				console.warn("Invalid bounds.", args)
+				return results
+			}
+		}
+
+		let startKey: NodeCursor<K, V> | undefined
+		let endKey: NodeCursor<K, V> | undefined
+		if (start !== undefined) {
+			startKey = this.findPath(start)
+		} else {
+			startKey = this.startCursor()
+		}
+		if (end !== undefined) {
+			endKey = this.findPath(end)
+		} else {
+			endKey = this.endCursor()
+		}
+
+		if (args.reverse) {
+			const leaf = endKey.nodePath[0] as LeafNode<K, V>
+			if (end !== undefined) {
+				const result = this.leafValues.search(leaf.values, end)
+				const index =
+					result.found !== undefined
+						? endOpen
+							? result.found
+							: result.found + 1
+						: result.closest
+				results.push(...leaf.values.slice(0, index).reverse())
+			} else {
+				results.push(...leaf.values.slice(0).reverse())
+			}
+
+			// Start bound in the same leaf.
+			if (
+				start !== undefined &&
+				this.compareKey(leaf.values[0].key, start) <= 0
+			) {
+				const result = this.leafValues.search(leaf.values, start)
+				if (result.found !== undefined) {
+					const startIndex = startOpen
+						? results.length - result.found - 1
+						: results.length - result.found
+					results.splice(startIndex, results.length)
+				} else {
+					results.splice(results.length - result.closest, results.length)
+				}
+
+				// Start and limit bound
+				if (args.limit && results.length >= args.limit) {
+					results.splice(args.limit, results.length)
+					return results
+				}
+				return results
+			}
+
+			// Limit bound
+			if (args.limit && results.length >= args.limit) {
+				results.splice(args.limit, results.length)
+				return results
+			}
+
+			let cursor: NodeCursor<K, V> | undefined = endKey
+			while ((cursor = this.prevCursor(cursor))) {
+				const leaf = cursor.nodePath[0] as LeafNode<K, V>
+
+				results.push(...leaf.values.slice(0).reverse())
+
+				// Start bound
+				if (
+					start !== undefined &&
+					this.compareKey(leaf.values[0].key, start) <= 0
+				) {
+					const result = this.leafValues.search(leaf.values, start)
+					if (result.found !== undefined) {
+						const startIndex = startOpen
+							? results.length - result.found - 1
+							: results.length - result.found
+						results.splice(startIndex, results.length)
+					} else {
+						results.splice(results.length - result.closest, results.length)
+					}
+
+					// Start and limit bound
+					if (args.limit && results.length >= args.limit) {
+						results.splice(args.limit, results.length)
+						return results
+					}
+					return results
+				}
+
+				// Limit bound
+				if (args.limit && results.length >= args.limit) {
+					results.splice(args.limit, results.length)
+					return results
+				}
+			}
+
+			return results
+		}
+
+		let startOffset = 0
+		const leaf = startKey.nodePath[0] as LeafNode<K, V>
+		if (start !== undefined) {
+			const result = this.leafValues.search(leaf.values, start)
+			const index =
+				result.found !== undefined
+					? startOpen
+						? result.found + 1
+						: result.found
+					: result.closest
+			startOffset = index
+			results.push(...leaf.values.slice(index))
+		} else {
+			results.push(...leaf.values)
+		}
+
+		// End bound in the same leaf.
+		if (
+			end !== undefined &&
+			this.compareKey(leaf.values[leaf.values.length - 1].key, end) >= 0
+		) {
+			const result = this.leafValues.search(leaf.values, end)
+
+			if (result.found !== undefined) {
+				const endIndex = endOpen
+					? result.found - startOffset
+					: result.found + 1 - startOffset
+				results.splice(endIndex, results.length)
+			} else {
+				results.splice(result.closest - startOffset, results.length)
+			}
+
+			// End and limit bound
+			if (args.limit && results.length >= args.limit) {
+				results.splice(args.limit, results.length)
+				return results
+			}
+			return results
+		}
+
+		// Limit bound
+		if (args.limit && results.length >= args.limit) {
+			results.splice(args.limit, results.length)
+			return results
+		}
+
+		let cursor: NodeCursor<K, V> | undefined = startKey
+		while ((cursor = this.nextCursor(cursor))) {
+			const leaf = cursor.nodePath[0] as LeafNode<K, V>
+
+			results.push(...leaf.values)
+
+			// End bound
+			if (
+				end !== undefined &&
+				this.compareKey(leaf.values[leaf.values.length - 1].key, end) >= 0
+			) {
+				const result = this.leafValues.search(results, end)
+				if (result.found !== undefined) {
+					const endIndex = endOpen ? result.found : result.found + 1
+					results.splice(endIndex, results.length)
+				} else {
+					results.splice(result.closest, results.length)
+				}
+
+				// End and limit bound
+				if (args.limit && results.length >= args.limit) {
+					results.splice(args.limit, results.length)
+					return results
+				}
+				return results
+			}
+
+			// Limit bound
+			if (args.limit && results.length >= args.limit) {
+				results.splice(args.limit, results.length)
+				return results
+			}
+		}
+
+		return results
+	}
+
+	set = (key: K, value: V) => {
+		const { nodePath, indexPath } = this.findPath(key)
 
 		// Intitalize root node.
-		if (!root) {
-			tx.set("root", {
+		if (nodePath.length === 0) {
+			this.nodes.set("root", {
 				leaf: true,
 				id: "root",
 				values: [{ key, value }],
 			})
-			await tx.commit()
 			return
 		}
 
 		// Insert into leaf node.
-		let releaseAncestors = () => {}
-		const nodePath = [root]
-		const indexPath: number[] = []
-		while (true) {
-			const node = nodePath[0]
-
-			// Latch Crabbing
-			if (node.values.length < this.maxSize) {
-				releaseAncestors()
-			}
-
-			if (node.leaf) {
-				const newNode = { ...node, values: [...node.values] }
-				const existing = this.leafValues.insert(newNode.values, { key, value })
-				tx.set(newNode.id, newNode)
-
-				// No need to rebalance if we're replacing
-				if (existing) {
-					await tx.commit()
-					return
-				}
-
-				// Replace the node and balance the tree.
-				nodePath[0] = newNode
-				break
-			}
-
-			const result = this.branchChildren.search(node.values, key)
-			const childIndex =
-				result.found !== undefined ? result.found : result.closest - 1
-			const childId = node.values[childIndex].value
-
-			const releaseChild = await tx.writeLock(childId)
-			const child = await tx.get(childId)
-			if (!child) {
-				tx.release()
-				throw Error("Missing child node.")
-			}
-
-			// Latch Crabbing
-			releaseAncestors = combine(releaseNode, releaseAncestors)
-			releaseNode = releaseChild
-
-			// Recur into child.
-			nodePath.unshift(child)
-			indexPath.unshift(childIndex)
-		}
+		const leaf = nodePath[0] as LeafNode<K, V>
+		const existing = this.leafValues.insert(leaf.values, { key, value })
+		// No need to rebalance if we're replacing an existing item.
+		if (existing) return
 
 		// Balance the tree by splitting nodes, starting from the leaf.
 		let node = nodePath.shift()
 		while (node) {
-			const size = node.values.length
-			if (size <= this.maxSize) {
-				await tx.commit()
-				return
-			}
-
+			const size = node.leaf ? node.values.length : node.children.length
+			if (size <= this.maxSize) break
 			const splitIndex = Math.round(size / 2)
-			const rightNode: LeafNode | BranchNode = {
-				id: randomId(),
-				leaf: node.leaf,
-				values: node.values.splice(splitIndex),
-			}
-			tx.set(rightNode.id, rightNode)
-			const rightMinKey = rightNode.values[0].key
 
-			// If we're splitting the root node, we want to keep the root id.
-			if (node.id === "root") {
-				const leftNode: LeafNode | BranchNode = {
+			if (node.leaf) {
+				// NOTE: this mutates the array!
+				const rightValues = node.values.splice(splitIndex)
+				const rightNode: LeafNode<K, V> = {
 					id: randomId(),
-					leaf: node.leaf,
-					values: node.values,
+					leaf: true,
+					values: rightValues,
 				}
-				tx.set(leftNode.id, leftNode)
+				this.nodes.set(rightNode.id, rightNode)
+				const rightMinKey = rightNode.values[0].key
 
-				const newRoot: LeafNode | BranchNode = {
+				if (node.id === "root") {
+					const leftNode: LeafNode<K, V> = {
+						id: randomId(),
+						leaf: true,
+						// NOTE: this array was mutated above.
+						values: node.values,
+					}
+					this.nodes.set(leftNode.id, leftNode)
+					const rootNode: BranchNode<K> = {
+						id: "root",
+						leaf: false,
+						children: [
+							{ minKey: null, childId: leftNode.id },
+							{ minKey: rightMinKey, childId: rightNode.id },
+						],
+					}
+					this.nodes.set("root", rootNode)
+					break
+				}
+
+				// Insert right node into parent.
+				const parent = nodePath.shift() as BranchNode<K>
+				const parentIndex = indexPath.shift()
+				if (!parent) throw new Error("Broken.")
+				if (parentIndex === undefined) throw new Error("Broken.")
+				parent.children.splice(parentIndex + 1, 0, {
+					minKey: rightMinKey,
+					childId: rightNode.id,
+				})
+
+				// Recur
+				node = parent
+				continue
+			}
+
+			// NOTE: this mutates the array!
+			const rightChildren = node.children.splice(splitIndex)
+			const rightNode: BranchNode<K> = {
+				id: randomId(),
+				children: rightChildren,
+			}
+			this.nodes.set(rightNode.id, rightNode)
+			const rightMinKey = rightNode.children[0].minKey
+
+			if (node.id === "root") {
+				const leftNode: BranchNode<K> = {
+					id: randomId(),
+					// NOTE: this array was mutated above.
+					children: node.children,
+				}
+				this.nodes.set(leftNode.id, leftNode)
+				const rootNode: BranchNode<K> = {
 					id: "root",
-					values: [
-						{ key: null, value: leftNode.id },
-						{ key: rightMinKey, value: rightNode.id },
+					children: [
+						{ minKey: null, childId: leftNode.id },
+						{ minKey: rightMinKey, childId: rightNode.id },
 					],
 				}
-				tx.set(newRoot.id, newRoot)
-				await tx.commit()
-				return
+				this.nodes.set("root", rootNode)
+				break
 			}
 
 			// Insert right node into parent.
-			const parent = nodePath.shift()
+			const parent = nodePath.shift() as BranchNode<K>
 			const parentIndex = indexPath.shift()
-			if (!parent) {
-				tx.release()
-				throw new Error("Broken.")
-			}
-			if (parentIndex === undefined) {
-				tx.release()
-				throw new Error("Broken.")
-			}
-
-			const newParent = { ...parent, values: [...parent.values] }
-			newParent.values.splice(parentIndex + 1, 0, {
-				key: rightMinKey,
-				value: rightNode.id,
+			if (!parent) throw new Error("Broken.")
+			if (parentIndex === undefined) throw new Error("Broken.")
+			parent.children.splice(parentIndex + 1, 0, {
+				minKey: rightMinKey,
+				childId: rightNode.id,
 			})
-			tx.set(newParent.id, newParent)
 
 			// Recur
-			node = newParent
+			node = parent
 		}
-
-		throw new Error("Broken.")
 	}
 
-	async delete(key: Key) {
-		const tx = this.kv.transact()
-
-		let releaseNode = await tx.writeLock("root")
-		const root = await tx.get("root")
-		if (!root) {
-			tx.release()
-			return
-		}
+	delete = (key: K) => {
+		const root = this.nodes.get("root")
+		if (!root) return
 
 		// Delete from leaf node.
-		let releaseAncestors = () => {}
 		const nodePath = [root]
 		const indexPath: number[] = []
 		while (true) {
 			const node = nodePath[0]
 
-			// Latch Crabbing, if we on't need to merge, or update parentKey.
-			if (node.values.length > this.minSize && node.values[0].key !== key) {
-				releaseAncestors()
-			}
-
 			if (node.leaf) {
-				const newNode = { ...node, values: [...node.values] }
-				const exists = remove(newNode.values, key)
-				tx.set(newNode.id, newNode)
-				if (!exists) {
-					await tx.commit()
-					return
-				}
-				// Continue to rebalance.
-				nodePath[0] = newNode
+				const exists = this.leafValues.remove(node.values, key)
+				if (!exists) return // No changes to the tree!
 				break
 			}
 
-			const result = search(node.values, key)
+			// Recur into the child.
+			const result = this.branchChildren.search(node.children, key)
 			const index =
 				result.found !== undefined ? result.found : result.closest - 1
-			const childId = node.values[index].value
-			const releaseChild = await tx.writeLock(childId)
-			const child = await tx.get(childId)
-			if (!child) {
-				tx.release()
-				throw Error("Missing child node.")
-			}
-
-			// Latch Crabbing
-			releaseAncestors = combine(releaseNode, releaseAncestors)
-			releaseNode = releaseChild
-
-			// Recur into the child.
+			const childId = node.children[index].childId
+			const child = this.nodes.get(childId)
+			if (!child) throw Error("Missing child node.")
 			nodePath.unshift(child)
 			indexPath.unshift(index)
 		}
 
-		/*
-
-		Step-by-step explanation of the more complicated case.
-
-		Imagine a tree with minSize = 2, maxSize = 4.
-
-		[null,10]
-		[null,5] [10,15]
-		[2,4] [5,7] [10,11] [15,24]
-
-		Removing 10 from the leaf
-
-		[null,10]
-		[null,5] [10,15]
-		[2,4] [5,7] [11] [15,24]
-
-		Loop: Merge and update parent pointers.
-
-		[null,10]
-		[null,5] [11]
-		[2,4] [5,7] [11,15,24]
-
-		Recurse into parent.
-
-		[null]
-		[null,5,11]
-		[2,4] [5,7] [11,15,24]
-
-		Replace the root with child if there is only one key
-
-		[null,5,11]
-		[2,4] [5,7] [11,15,24]
-
-		*/
-
+		// Merge or redistribute to maintain minSize.
 		let node = nodePath.shift()
 		while (node) {
 			if (node.id === "root") {
 				// A root leaf node has no minSize constaint.
-				if (node.leaf) {
-					await tx.commit()
+				if (node.leaf) return
+
+				// Cleanup an empty root node.
+				if (node.children.length === 0) {
+					this.nodes.delete("root")
 					return
 				}
 
-				// Root node with only one child becomes its child.
-				if (node.values.length === 1) {
-					const childId = node.values[0].value
-					// No need to lock here because it should already be locked.
-					const child = await tx.get(childId)
-					if (!child) {
-						tx.release()
-						throw new Error("Broken.")
-					}
-					const newRoot = { ...child, id: "root" }
-					tx.set(newRoot.id, newRoot)
-					tx.delete(childId)
+				// A root node with one child becomes its child.
+				if (node.children.length === 1) {
+					const childId = node.children[0].childId
+					const childNode = this.nodes.get(childId)
+					if (!childNode) throw new Error("Broken.")
+					this.nodes.set("root", { ...childNode, id: "root" })
+					this.nodes.delete(childId)
 				}
 
-				await tx.commit()
 				return
 			}
 
-			const parent = nodePath.shift()
+			const parent = nodePath.shift() as BranchNode<K>
 			const parentIndex = indexPath.shift()
-			if (!parent) {
-				tx.release()
-				throw new Error("Broken.")
-			}
-			if (parentIndex === undefined) {
-				tx.release()
-				throw new Error("Broken.")
-			}
+			if (!parent) throw new Error("Broken.")
+			if (parentIndex === undefined) throw new Error("Broken.")
 
-			if (node.values.length >= this.minSize) {
-				// No need to merge but we might need to update the minKey in the parent
-				const parentItem = parent.values[parentIndex]
+			const size = node.leaf ? node.values.length : node.children.length
+			const minKey = node.leaf ? node.values[0].key : node.children[0].minKey
+
+			// No need to merge but we might need to update the minKey in the parent
+			if (size >= this.minSize) {
+				const parentItem = parent.children[parentIndex]
 				// No need to recusively update the left-most branch.
-				if (parentItem.key === null) {
-					await tx.commit()
-					return
-				}
+				if (parentItem.minKey === null) return
 				// No need to recursively update if the minKey didn't change.
-				if (parentItem.key === node.values[0].key) {
-					await tx.commit()
-					return
-				}
-
+				if (this.compareBranchKey(parentItem.minKey, minKey) === 0) return
 				// Set the minKey and recur
-				const newParent = { ...parent, values: [...parent.values] }
-				newParent.values[parentIndex] = {
-					key: node.values[0].key,
-					value: parentItem.value,
-				}
-				tx.set(newParent.id, newParent)
-				node = newParent
+				parentItem.minKey = minKey
+				node = parent
 				continue
 			}
 
-			// Merge or redistribute
-			if (parentIndex === 0) {
-				// When we delete from the first element, merge/redistribute with right sibling.
-				const rightId = parent.values[parentIndex + 1].value
-				const releaseRight = await tx.writeLock(rightId)
-				const rightSibling = await tx.get(rightId)
-				if (!rightSibling) {
-					tx.release()
-					throw new Error("Broken.")
-				}
+			// Merge or redistribute leaf nodes.
+			if (node.leaf) {
+				if (parentIndex === 0) {
+					const rightId = parent.children[parentIndex + 1].childId
+					const rightSibling = this.nodes.get(rightId) as typeof node
+					if (!rightSibling) throw new Error("Broken.")
 
-				const combinedSize = node.values.length + rightSibling.values.length
-				if (combinedSize > this.maxSize) {
-					// Redistribute between both nodes.
-					const splitIndex = Math.round(combinedSize / 2) - node.values.length
+					const combinedSize = node.values.length + rightSibling.values.length
 
-					const newRight = { ...rightSibling, values: [...rightSibling.values] }
-					const moveLeft = newRight.values.splice(0, splitIndex)
-					tx.set(newRight.id, newRight)
-
-					const newNode = { ...node, values: [...node.values] }
-					newNode.values.push(...moveLeft)
-					tx.set(newNode.id, newNode)
-
-					// Update parent minKey.
-					const newParent = { ...parent, values: [...parent.values] }
-					if (parent.values[parentIndex].key !== null) {
-						newParent.values[parentIndex] = {
-							key: newNode.values[0].key,
-							value: newParent.values[parentIndex].value,
+					// Redistribute leaf.
+					if (combinedSize > this.maxSize) {
+						const splitIndex = Math.round(combinedSize / 2) - node.values.length
+						// NOTE: this mutates the array!
+						const moveLeft = rightSibling.values.splice(0, splitIndex)
+						node.values.push(...moveLeft)
+						// Update parent minKey.
+						if (parent.children[parentIndex].minKey !== null) {
+							const leftMinKey = node.values[0].key
+							parent.children[parentIndex].minKey = leftMinKey
 						}
+						const rightMinKey = rightSibling.values[0].key
+						parent.children[parentIndex + 1].minKey = rightMinKey
+
+						// Recur
+						node = parent
+						continue
 					}
 
-					newParent.values[parentIndex + 1] = {
-						key: newRight.values[0].key,
-						value: newParent.values[parentIndex + 1].value,
-					}
-					tx.set(newParent.id, newParent)
+					// Merge leaves.
+					node.values.push(...rightSibling.values)
+					// Delete rightSibling
+					parent.children.splice(1, 1)
+					this.nodes.delete(rightSibling.id)
+					// Update parent minKey
+					const leftMost = parent.children[0].minKey === null
+					const minKey = leftMost ? null : node.values[0].key
+					parent.children[0].minKey = minKey
 
 					// Recur
-					node = newParent
+					node = parent
 					continue
 				}
 
-				// Merge
-				const newRight = { ...rightSibling, values: [...rightSibling.values] }
-				newRight.values.unshift(...node.values)
+				const leftId = parent.children[parentIndex - 1].childId
+				const leftSibling = this.nodes.get(leftId) as typeof node
+				if (!leftSibling) throw new Error("Broken.")
 
-				// Remove the old pointer to rightSibling
-				const newParent = { ...parent, values: [...parent.values] }
-				newParent.values.splice(1, 1)
+				const combinedSize = leftSibling.values.length + node.values.length
 
-				// Replace the node pointer with the new rightSibling
-				const leftMost = newParent.values[0].key === null
-				newParent.values[0] = {
-					key: leftMost ? null : newRight.values[0].key,
-					value: newRight.id,
+				// Redistribute leaf.
+				if (combinedSize > this.maxSize) {
+					const splitIndex = Math.round(combinedSize / 2)
+
+					const moveRight = leftSibling.values.splice(splitIndex, this.maxSize)
+					node.values.unshift(...moveRight)
+
+					// Update parent minKey.
+					parent.children[parentIndex].minKey = node.values[0].key
+
+					// Recur
+					node = parent
+					continue
 				}
-				tx.set(newRight.id, newRight)
-				tx.set(newParent.id, newParent)
-				tx.delete(node.id)
+
+				// Merge leaf.
+				leftSibling.values.push(...node.values)
+				// Delete the node
+				parent.children.splice(parentIndex, 1)
+				this.nodes.delete(node.id)
+				// No need to update minKey because we added to the right.
 
 				// Recur
-				node = newParent
+				node = parent
 				continue
 			}
 
-			// Merge/redistribute with left sibling.
-			const leftId = parent.values[parentIndex - 1].value
-			const releaseLeft = await tx.writeLock(leftId)
-			const leftSibling = await tx.get(leftId)
-			if (!leftSibling) {
-				tx.release()
-				throw new Error("Broken.")
+			// Merge or redistribute branch nodes.
+			if (parentIndex === 0) {
+				const rightId = parent.children[parentIndex + 1].childId
+				const rightSibling = this.nodes.get(rightId) as typeof node
+				if (!rightSibling) throw new Error("Broken.")
+
+				const combinedSize = node.children.length + rightSibling.children.length
+
+				// Redistribute leaf.
+				if (combinedSize > this.maxSize) {
+					const splitIndex = Math.round(combinedSize / 2) - node.children.length
+					// NOTE: this mutates the array!
+					const moveLeft = rightSibling.children.splice(0, splitIndex)
+					node.children.push(...moveLeft)
+					// Update parent minKey.
+					if (parent.children[parentIndex].minKey !== null) {
+						const leftMinKey = node.children[0].minKey
+						parent.children[parentIndex].minKey = leftMinKey
+					}
+					const rightMinKey = rightSibling.children[0].minKey
+					parent.children[parentIndex + 1].minKey = rightMinKey
+
+					// Recur
+					node = parent
+					continue
+				}
+
+				// Merge leaves.
+				node.children.push(...rightSibling.children)
+				// Delete rightSibling
+				parent.children.splice(1, 1)
+				this.nodes.delete(rightSibling.id)
+				// Update parent minKey
+				const leftMost = parent.children[0].minKey === null
+				const minKey = leftMost ? null : node.children[0].minKey
+				parent.children[0].minKey = minKey
+
+				// Recur
+				node = parent
+				continue
 			}
 
-			const combinedSize = leftSibling.values.length + node.values.length
+			const leftId = parent.children[parentIndex - 1].childId
+			const leftSibling = this.nodes.get(leftId) as typeof node
+			if (!leftSibling) throw new Error("Broken.")
+
+			const combinedSize = leftSibling.children.length + node.children.length
+
+			// Redistribute leaf.
 			if (combinedSize > this.maxSize) {
-				// Redistribute
 				const splitIndex = Math.round(combinedSize / 2)
 
-				const newLeft = { ...leftSibling, values: [...leftSibling.values] }
-				const moveRight = newLeft.values.splice(splitIndex, this.maxSize)
+				const moveRight = leftSibling.children.splice(splitIndex, this.maxSize)
+				node.children.unshift(...moveRight)
 
-				const newNode = { ...node, values: [...node.values] }
-				newNode.values.unshift(...moveRight)
-
-				// Update parent keys.
-				const newParent = { ...parent, values: [...parent.values] }
-				newParent.values[parentIndex] = {
-					key: newNode.values[0].key,
-					value: newParent.values[parentIndex].value,
-				}
-				tx.set(newLeft.id, newLeft)
-				tx.set(newNode.id, newNode)
-				tx.set(newParent.id, newParent)
+				// Update parent minKey.
+				parent.children[parentIndex].minKey = node.children[0].minKey
 
 				// Recur
-				node = newParent
+				node = parent
 				continue
 			}
 
-			// Merge
-			const newLeft = { ...leftSibling, values: [...leftSibling.values] }
-			newLeft.values.push(...node.values)
-
+			// Merge leaf.
+			leftSibling.children.push(...node.children)
+			// Delete the node
+			parent.children.splice(parentIndex, 1)
+			this.nodes.delete(node.id)
 			// No need to update minKey because we added to the right.
-			// Just need to delete the old node.
-			const newParent = { ...parent, values: [...parent.values] }
-			newParent.values.splice(parentIndex, 1)
-
-			tx.set(newLeft.id, newLeft)
-			tx.set(newParent.id, newParent)
-			tx.delete(node.id)
 
 			// Recur
-			node = newParent
+			node = parent
 			continue
 		}
-
-		tx.release()
 	}
 
-	async depth() {
-		const tx = this.kv.transact()
-		let releaseNode = await tx.readLock("root")
-		const root = await tx.get("root")
-		if (!root) {
-			tx.release()
-			return 0
-		}
+	depth() {
+		const root = this.nodes.get("root")
+		if (!root) return 0
 		let depth = 1
 		let node = root
 		while (!node.leaf) {
 			depth += 1
-			const childId = node.values[0].value
-			const releaseChld = await tx.readLock(childId)
-			releaseNode()
-			releaseNode = releaseChld
-			const nextNode = await tx.get(childId)
-			if (!nextNode) {
-				tx.release()
-				throw new Error("Broken.")
-			}
+			const nextNode = this.nodes.get(node.children[0].childId)
+			if (!nextNode) throw new Error("Broken.")
 			node = nextNode
 		}
-		tx.release()
 		return depth
+	}
+
+	clone() {
+		const cloned = new AsyncBinaryPlusTree<K, V>(this.minSize, this.maxSize)
+		cloned.nodes = cloneDeep(this.nodes)
+		return cloned
 	}
 }
 
 function randomId() {
 	return Math.random().toString(36).slice(2, 10)
-}
-
-function combine(fn1: () => void, fn2: () => void) {
-	return () => {
-		fn1()
-		fn2()
-	}
 }
