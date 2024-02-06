@@ -308,7 +308,6 @@ Starting from bptree2.ts
 
 
 
-// btree2 -> btree-sync
 // btree-lock -> btree-async with better types, jsonCodec, and list query.
 
 // btree-reducer-sync
@@ -316,3 +315,62 @@ Starting from bptree2.ts
 
 // itree-sync
 // itree-async
+
+prolly tree just for fun?
+
+
+
+Demos...
+- Messaging app (Slack)
+
+	```
+	[channelId, {}]
+	[channelId, ]
+
+
+- Social network app (Twitter)
+- Contacts app  (Database)
+- Generalized Database
+- Filing Cabinets
+
+```ts
+
+const role = t.union(
+	t.literal("member"),
+	t.literal("admin")
+)
+
+const Channel = t.obj({
+	id: t.uuid,
+	name: t.string,
+	members: t.map(t.uuid, role)
+})
+
+const Message = t.obj({
+	id: t.uuid,
+	author_id: t.uuid,
+	channel_id: t.uuid,
+	created_at: t.date,
+	text: t.string
+})
+
+const MessagesIndex = {
+	label: ["channel_id", "message_created_at", "message_id"],
+	key: [t.uuid, t.date, t.uuid],
+	value: t.null
+}
+
+// Maybe we do want a table, index model...
+
+type Index = {
+	key: ["channel", ":id"],
+	value: {id: string, name: string}
+}
+
+type Index = {
+	key: ["channel", ":id"],
+	value: {id: string, name: string}
+}
+
+
+```
