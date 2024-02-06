@@ -4,9 +4,8 @@ import { cloneDeep, isEqual, uniq } from "lodash"
 import { describe, it } from "mocha"
 import {
 	AsyncBinaryPlusTree,
-	AsyncKeyValueDatabase,
-	AsyncKeyValueTransaction,
 	KeyValueStorage,
+	KeyValueTransaction,
 } from "./AsyncBinaryPlusTree"
 
 // min = 2, max = 4
@@ -222,19 +221,8 @@ class DelayStorage<T = any> implements KeyValueStorage<string, T> {
 	}
 }
 
-// Test class to make assertions about locks.
-// Also introduce delays for concurrency.
-class TestAsyncKeyValueDatabase<T> extends AsyncKeyValueDatabase<T> {
-	constructor(storage: KeyValueStorage<string, T>) {
-		super(storage)
-	}
-
-	transact() {
-		return new TestTransaction<T>(this)
-	}
-}
-
-class TestTransaction<T> extends AsyncKeyValueTransaction<T> {
+// Test locks in every transaction.
+class TestKeyValueTransaction<T> extends KeyValueTransaction<T> {
 	readLocks = new Set<string>()
 	async readLock(key: string) {
 		const release = await super.readLock(key)
@@ -300,15 +288,47 @@ class TestTransaction<T> extends AsyncKeyValueTransaction<T> {
 	}
 }
 
-// Skipping becuase this is pretty slow.
+// Patch in the test transaction.
+function createTestTree(
+	storage: KeyValueStorage,
+	minSize: number,
+	maxSize: number
+) {
+	const tree = new AsyncBinaryPlusTree(storage, minSize, maxSize)
+	tree.kv.transact = () => {
+		return new TestKeyValueTransaction(tree.kv)
+	}
+	return tree
+}
+
+function deepClone(tree: AsyncBinaryPlusTree) {
+	// Clone storage
+	const storage = tree.kv.storage as DelayStorage
+	const newStorage = new DelayStorage(storage.delay)
+	newStorage.map = cloneDeep(storage.map)
+
+	// Create the tree
+	const cloned = createTestTree(newStorage, tree.minSize, tree.maxSize)
+	return cloned
+}
+
+function shallowClone(tree: AsyncBinaryPlusTree) {
+	// Clone storage
+	const storage = tree.kv.storage as DelayStorage
+	const newStorage = new DelayStorage(storage.delay)
+	newStorage.map = new Map(storage.map)
+
+	// Create the tree
+	const cloned = createTestTree(newStorage, tree.minSize, tree.maxSize)
+	return cloned
+}
+
 describe("AsyncBinaryPlusTree", function () {
 	this.timeout(10_000)
 
 	describe("structural tests 2-4", async () => {
-		const kv = new TestAsyncKeyValueDatabase(
-			new DelayStorage()
-		) as AsyncKeyValueDatabase
-		const tree = new AsyncBinaryPlusTree(kv, 2, 4)
+		const storage = new DelayStorage()
+		const tree = createTestTree(storage, 2, 4)
 		await test(tree, structuralTests24)
 	})
 
@@ -322,10 +342,8 @@ describe("AsyncBinaryPlusTree", function () {
 
 	it("big tree", async () => {
 		const numbers = randomNumbers(20_000)
-		const kv = new TestAsyncKeyValueDatabase(
-			new DelayStorage()
-		) as AsyncKeyValueDatabase
-		const tree = new AsyncBinaryPlusTree(kv, 3, 9)
+		const storage = new DelayStorage()
+		const tree = createTestTree(storage, 3, 9)
 		for (const number of numbers) {
 			await tree.set(number, number * 2)
 			assert.equal(await tree.get(number), number * 2)
@@ -342,10 +360,8 @@ describe("AsyncBinaryPlusTree", function () {
 
 		const sleep = (n: number) => clock.sleep(Math.random() * n)
 
-		const kv = new TestAsyncKeyValueDatabase(
-			new DelayStorage(() => sleep(5))
-		) as AsyncKeyValueDatabase
-		const tree = new AsyncBinaryPlusTree(kv, 3, 6)
+		const storage = new DelayStorage(() => sleep(5))
+		const tree = createTestTree(storage, 3, 6)
 
 		const size = 5000
 		const numbers = randomNumbers(size)
@@ -400,10 +416,8 @@ describe("AsyncBinaryPlusTree", function () {
 	}) {
 		const numbers = randomNumbers(args.testSize)
 
-		const kv = new TestAsyncKeyValueDatabase(
-			new DelayStorage()
-		) as AsyncKeyValueDatabase
-		const tree = new AsyncBinaryPlusTree(kv, args.minSize, args.maxSize)
+		const storage = new DelayStorage()
+		const tree = createTestTree(storage, args.minSize, args.maxSize)
 		for (let i = 0; i < numbers.length; i++) {
 			const n = numbers[i]
 			it(`Set ${i} : ${n}`, async () => {
@@ -585,38 +599,6 @@ async function inspect(tree: AsyncBinaryPlusTree) {
 		)
 		.join("\n")
 	return str
-}
-
-function deepClone(tree: AsyncBinaryPlusTree) {
-	// Clone storage
-	const storage = tree.kv.storage as DelayStorage
-	const newStorage = new DelayStorage(storage.delay)
-	newStorage.map = cloneDeep(storage.map)
-
-	// Wrap into KV
-	const newKv = new TestAsyncKeyValueDatabase(
-		newStorage
-	) as AsyncKeyValueDatabase
-
-	// Create the tree
-	const cloned = new AsyncBinaryPlusTree(newKv, tree.minSize, tree.maxSize)
-	return cloned
-}
-
-function shallowClone(tree: AsyncBinaryPlusTree) {
-	// Clone storage
-	const storage = tree.kv.storage as DelayStorage
-	const newStorage = new DelayStorage(storage.delay)
-	newStorage.map = new Map(storage.map)
-
-	// Wrap into KV
-	const newKv = new TestAsyncKeyValueDatabase(
-		newStorage
-	) as AsyncKeyValueDatabase
-
-	// Create the tree
-	const cloned = new AsyncBinaryPlusTree(newKv, tree.minSize, tree.maxSize)
-	return cloned
 }
 
 /** Check for node sizes. */

@@ -11,12 +11,12 @@ import { orderedArray } from "@ccorcos/ordered-array"
 
 import { RWLockMap } from "@ccorcos/lock"
 
-export type KeyValueStorage<K, V> = {
+export type KeyValueStorage<K = string, V = any> = {
 	get: (key: K) => Promise<V | undefined>
 	write: (tx: { set?: { key: K; value: V }[]; delete?: K[] }) => Promise<void>
 }
 
-export class AsyncKeyValueDatabase<T = any> {
+export class KeyValueDatabase<T = any> {
 	constructor(public storage: KeyValueStorage<string, T>) {}
 
 	async get(key: string) {
@@ -30,17 +30,17 @@ export class AsyncKeyValueDatabase<T = any> {
 	locks = new RWLockMap()
 
 	transact() {
-		return new AsyncKeyValueTransaction(this)
+		return new KeyValueTransaction(this)
 	}
 }
 
-export class AsyncKeyValueTransaction<T> {
+export class KeyValueTransaction<T> {
 	locks = new Set<() => void>()
 	cache: { [key: string]: T | undefined } = {}
 	sets: { [key: string]: T } = {}
 	deletes = new Set<string>()
 
-	constructor(public kv: AsyncKeyValueDatabase<T>) {}
+	constructor(public kv: KeyValueDatabase<T>) {}
 
 	async readLock(key: string) {
 		// console.log("READ", key)
@@ -129,12 +129,17 @@ export class AsyncBinaryPlusTree {
 	 * minSize must be less than maxSize / 2.
 	 */
 	constructor(
-		public kv: AsyncKeyValueDatabase<BranchNode | LeafNode>,
+		storage: KeyValueStorage<string, BranchNode | LeafNode>,
 		public minSize: number,
 		public maxSize: number
 	) {
 		if (minSize > maxSize / 2) throw new Error("Invalid tree size.")
+		this.kv = new KeyValueDatabase(storage)
 	}
+
+	kv: KeyValueDatabase
+
+	locks = new RWLockMap()
 
 	// Commit transaction for read-concurrency checks.
 	async get(key: Key): Promise<any | undefined> {
