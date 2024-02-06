@@ -307,6 +307,14 @@ Starting from bptree2.ts
 - Using a Map instead of an object to store nodes.
 
 
+## Durable B+ Tree (lib/AsyncBinaryPlusTree.ts)
+
+I'm not sure latch crabbing is really that useful once we start having batch writes and list reads. Probably better just to have a single read and write lock.
+
+Starting from InMemoryBinaryPlusTree.
+
+
+
 
 // btree-lock -> btree-async with better types, jsonCodec, and list query.
 

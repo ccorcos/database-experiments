@@ -3,27 +3,35 @@
 B+ tree with latch crabbing locking
 https://stackoverflow.com/questions/52058099/making-a-btree-concurrent-c
 
+I'm not sure latch crabbing is really that useful once we start having batch writes and list reads.
+Probably better just to have a single read and write lock.
+
+remove depth and clone from in-memory tree?
 better types, jsonCodec, and list query.
 
 */
 
+import { RWLockMap } from "@ccorcos/lock"
 import { orderedArray } from "@ccorcos/ordered-array"
 
-import { RWLockMap } from "@ccorcos/lock"
-
-export type KeyValueStorage<K = string, V = any> = {
-	get: (key: K) => Promise<V | undefined>
-	write: (tx: { set?: { key: K; value: V }[]; delete?: K[] }) => Promise<void>
+// Used to store tree nodes.
+export type KeyValueStorage<V = any> = {
+	get: (key: string) => Promise<V | undefined>
+	write: (tx: {
+		set?: { key: string; value: V }[]
+		delete?: string[]
+	}) => Promise<void>
 }
 
-export class KeyValueDatabase<T = any> {
-	constructor(public storage: KeyValueStorage<string, T>) {}
+// This encapsulates KeyValueStorage along with locks.
+export class KeyValueDatabase<V = any> {
+	constructor(public storage: KeyValueStorage<V>) {}
 
 	async get(key: string) {
 		return await this.storage.get(key)
 	}
 
-	async write(tx: { set?: { key: string; value: T }[]; delete?: string[] }) {
+	async write(tx: { set?: { key: string; value: V }[]; delete?: string[] }) {
 		await this.storage.write(tx)
 	}
 
@@ -34,13 +42,13 @@ export class KeyValueDatabase<T = any> {
 	}
 }
 
-export class KeyValueTransaction<T> {
+export class KeyValueTransaction<V> {
 	locks = new Set<() => void>()
-	cache: { [key: string]: T | undefined } = {}
-	sets: { [key: string]: T } = {}
+	cache: { [key: string]: V | undefined } = {}
+	sets: { [key: string]: V } = {}
 	deletes = new Set<string>()
 
-	constructor(public kv: KeyValueDatabase<T>) {}
+	constructor(public kv: KeyValueDatabase<V>) {}
 
 	async readLock(key: string) {
 		// console.log("READ", key)
@@ -62,14 +70,14 @@ export class KeyValueTransaction<T> {
 		}
 	}
 
-	async get(key: string): Promise<T | undefined> {
+	async get(key: string): Promise<V | undefined> {
 		if (key in this.cache) return this.cache[key]
 		const value = await this.kv.get(key)
 		this.cache[key] = value
 		return value
 	}
 
-	set(key: string, value: T) {
+	set(key: string, value: V) {
 		this.sets[key] = value
 		this.cache[key] = value
 		this.deletes.delete(key)
@@ -94,44 +102,38 @@ export class KeyValueTransaction<T> {
 	}
 }
 
-type Key = string | number
-
-/**
- * id references the node in a key-value database.
- * Each item in values has a `key` that is the minKey of the child node with id `value`.
- * The key will be null for the left-most branch nodes.
- */
-export type BranchNode = {
+export type BranchNode<K> = {
 	leaf?: false
 	id: string
-	values: { key: Key | null; value: string }[]
+	children: { minKey: K | null; childId: string }[]
 }
 
-export type LeafNode = {
+export type LeafNode<K, V> = {
 	leaf: true
 	id: string
-	values: { key: Key | null; value: any }[]
+	values: { key: K; value: V }[]
 }
 
-const { search, insert, remove } = orderedArray(
-	(item: { key: Key | null }) => item.key,
-	(a, b) => {
-		if (a === b) return 0
-		if (a === null) return -1
-		if (b === null) return 1
-		if (a > b) return 1
-		else return -1
-	}
-)
+type NodeCursor<K, V> = {
+	nodePath: (BranchNode<K> | LeafNode<K, V>)[]
+	indexPath: number[]
+}
 
-export class AsyncBinaryPlusTree {
+function compare(a: any, b: any) {
+	if (a === b) return 0
+	if (a > b) return 1
+	return -1
+}
+
+export class AsyncBinaryPlusTree<K = string | number, V = any> {
 	/**
 	 * minSize must be less than maxSize / 2.
 	 */
 	constructor(
-		storage: KeyValueStorage<string, BranchNode | LeafNode>,
+		storage: KeyValueStorage<BranchNode<K> | LeafNode<K, V>>,
 		public minSize: number,
-		public maxSize: number
+		public maxSize: number,
+		public compareKey: (a: K, b: K) => number = compare
 	) {
 		if (minSize > maxSize / 2) throw new Error("Invalid tree size.")
 		this.kv = new KeyValueDatabase(storage)
@@ -141,8 +143,26 @@ export class AsyncBinaryPlusTree {
 
 	locks = new RWLockMap()
 
+	private leafValues = orderedArray(
+		(item: { key: K }) => item.key,
+		this.compareKey
+	)
+
+	private compareBranchKey = (a: K | null, b: K | null) => {
+		if (a === null || b === null) {
+			if (a === null) return -1
+			if (b === null) return 1
+		}
+		return this.compareKey(a, b)
+	}
+
+	private branchChildren = orderedArray(
+		(item: { minKey: K | null }) => item.minKey,
+		this.compareBranchKey
+	)
+
 	// Commit transaction for read-concurrency checks.
-	async get(key: Key): Promise<any | undefined> {
+	async get(key: K): Promise<V | undefined> {
 		const tx = this.kv.transact()
 
 		let releaseNode = await tx.readLock("root")
@@ -155,7 +175,7 @@ export class AsyncBinaryPlusTree {
 		let node = root
 		while (true) {
 			if (node.leaf) {
-				const result = search(node.values, key)
+				const result = this.leafValues.search(node.values, key)
 				if (result.found === undefined) {
 					tx.release()
 					return
@@ -164,7 +184,7 @@ export class AsyncBinaryPlusTree {
 				return node.values[result.found].value
 			}
 
-			const result = search(node.values, key)
+			const result = this.branchChildren.search(node.values, key)
 
 			// Closest key that is at least as big as the key...
 			// So the closest should never be less than the minKey.
@@ -192,7 +212,7 @@ export class AsyncBinaryPlusTree {
 		}
 	}
 
-	async set(key: Key, value: any) {
+	async set(key: K, value: V) {
 		const tx = this.kv.transact()
 
 		let releaseNode = await tx.writeLock("root")
@@ -223,7 +243,7 @@ export class AsyncBinaryPlusTree {
 
 			if (node.leaf) {
 				const newNode = { ...node, values: [...node.values] }
-				const existing = insert(newNode.values, { key, value })
+				const existing = this.leafValues.insert(newNode.values, { key, value })
 				tx.set(newNode.id, newNode)
 
 				// No need to rebalance if we're replacing
@@ -237,7 +257,7 @@ export class AsyncBinaryPlusTree {
 				break
 			}
 
-			const result = search(node.values, key)
+			const result = this.branchChildren.search(node.values, key)
 			const childIndex =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.values[childIndex].value
