@@ -11,16 +11,20 @@ import { orderedArray } from "@ccorcos/ordered-array"
 
 import { RWLockMap } from "@ccorcos/lock"
 
+export type KeyValueStorage<K, V> = {
+	get: (key: K) => Promise<V | undefined>
+	write: (tx: { set?: { key: K; value: V }[]; delete?: K[] }) => Promise<void>
+}
+
 export class AsyncKeyValueDatabase<T = any> {
-	map = new Map<string, T>()
+	constructor(public storage: KeyValueStorage<string, T>) {}
 
 	async get(key: string) {
-		return this.map.get(key)
+		return await this.storage.get(key)
 	}
 
 	async write(tx: { set?: { key: string; value: T }[]; delete?: string[] }) {
-		for (const { key, value } of tx.set || []) this.map.set(key, value)
-		for (const key of tx.delete || []) this.map.delete(key)
+		await this.storage.write(tx)
 	}
 
 	locks = new RWLockMap()
