@@ -88,9 +88,6 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 		const { nodePath } = this.findPath(key)
 		if (nodePath.length === 0) return
 
-		const root = this.nodes.get("root")
-		if (!root) return // Empty tree
-
 		const leaf = nodePath[0] as LeafNode<K, V>
 		const result = this.leafValues.search(leaf.values, key)
 		if (result.found === undefined) return

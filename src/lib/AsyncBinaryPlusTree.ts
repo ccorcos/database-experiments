@@ -1,13 +1,78 @@
+/*
+
+no latch crabbing.
+
+TODO
+- use async storage.
+- add a read and write lock
+- add a batch-write
+
+
+*/
+
+import { RWLock } from "@ccorcos/lock"
 import { orderedArray } from "@ccorcos/ordered-array"
 import { cloneDeep } from "lodash"
 
-// Used to store tree nodes.
-export type KeyValueStorage<V = any> = {
+/** Used to store tree nodes. */
+export type AsyncKeyValueStorage<V = any> = {
 	get: (key: string) => Promise<V | undefined>
 	write: (tx: {
 		set?: { key: string; value: V }[]
 		delete?: string[]
 	}) => Promise<void>
+}
+
+type ReadTransactionApi<T> = {
+	get: (key: string) => Promise<T | undefined>
+}
+
+export class ReadTransaction<T> implements ReadTransactionApi<T> {
+	cache = new Map<string, T | undefined>()
+
+	constructor(public storage: AsyncKeyValueStorage<T>) {}
+
+	async get(key: string): Promise<T | undefined> {
+		if (this.cache.has(key)) return this.cache.get(key)
+		const value = await this.storage.get(key)
+		this.cache.set(key, value)
+		return value
+	}
+}
+
+type ReadWriteTransactionApi<T> = {
+	get: (key: string) => Promise<T | undefined>
+	set: (key: string, value: T) => void
+	delete: (key: string) => void
+	commit: () => Promise<void>
+}
+
+export class ReadWriteTransaction<T>
+	extends ReadTransaction<T>
+	implements ReadWriteTransactionApi<T>
+{
+	sets = new Map<string, T>()
+	deletes = new Set<string>()
+
+	set(key: string, value: T) {
+		this.sets.set(key, value)
+		this.cache.set(key, value)
+		this.deletes.delete(key)
+	}
+
+	delete(key: string) {
+		this.cache.set(key, undefined)
+		this.sets.delete(key)
+		this.deletes.add(key)
+	}
+
+	async commit() {
+		const entries = Array.from(this.sets.entries())
+		await this.storage.write({
+			set: entries.map(([key, value]) => ({ key, value })),
+			delete: Array.from(this.deletes),
+		})
+	}
 }
 
 export type BranchNode<K> = {
@@ -34,18 +99,19 @@ type NodeCursor<K, V> = {
 }
 
 export class AsyncBinaryPlusTree<K = string | number, V = any> {
-	nodes = new Map<string, BranchNode<K> | LeafNode<K, V>>()
-
 	/**
 	 * minSize must be less than maxSize / 2.
 	 */
 	constructor(
+		public storage: AsyncKeyValueStorage<BranchNode<K> | LeafNode<K, V>>,
 		public minSize: number,
 		public maxSize: number,
 		public compareKey: (a: K, b: K) => number = compare
 	) {
 		if (minSize > maxSize / 2) throw new Error("Invalid tree size.")
 	}
+
+	lock = new RWLock()
 
 	private leafValues = orderedArray(
 		(item: { key: K }) => item.key,
@@ -65,11 +131,14 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 		this.compareBranchKey
 	)
 
-	private findPath(key: K): NodeCursor<K, V> {
+	private async findPath(
+		tx: ReadTransactionApi<BranchNode<K> | LeafNode<K, V>>,
+		key: K
+	): Promise<NodeCursor<K, V>> {
 		const nodePath: (BranchNode<K> | LeafNode<K, V>)[] = []
 		const indexPath: number[] = []
 
-		const root = this.nodes.get("root")
+		const root = await tx.get("root")
 		if (!root) return { nodePath, indexPath }
 		else nodePath.push(root)
 
@@ -86,24 +155,24 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			const childIndex =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.children[childIndex].childId
-			const child = this.nodes.get(childId)
+			const child = await tx.get(childId)
 			if (!child) throw Error("Missing child node.")
 			nodePath.unshift(child)
 			indexPath.unshift(childIndex)
 		}
 	}
 
-	get = (key: K): V | undefined => {
-		const { nodePath } = this.findPath(key)
-		if (nodePath.length === 0) return
+	get = async (key: K): Promise<V | undefined> => {
+		return this.lock.withRead(async () => {
+			const tx = new ReadTransaction(this.storage)
+			const { nodePath } = await this.findPath(tx, key)
+			if (nodePath.length === 0) return
 
-		const root = this.nodes.get("root")
-		if (!root) return // Empty tree
-
-		const leaf = nodePath[0] as LeafNode<K, V>
-		const result = this.leafValues.search(leaf.values, key)
-		if (result.found === undefined) return
-		return leaf.values[result.found].value
+			const leaf = nodePath[0] as LeafNode<K, V>
+			const result = this.leafValues.search(leaf.values, key)
+			if (result.found === undefined) return
+			return leaf.values[result.found].value
+		})
 	}
 
 	private startCursor() {
