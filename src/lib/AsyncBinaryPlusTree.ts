@@ -4,15 +4,14 @@ no latch crabbing.
 
 TODO
 - use async storage.
-- add a read and write lock
-- add a batch-write
+	- no in-place mutation!
+- add a transaction helper
 
 
 */
 
 import { RWLock } from "@ccorcos/lock"
 import { orderedArray } from "@ccorcos/ordered-array"
-import { cloneDeep } from "lodash"
 
 /** Used to store tree nodes. */
 export type AsyncKeyValueStorage<V = any> = {
@@ -175,12 +174,16 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 		})
 	}
 
-	private startCursor() {
+	// HERE
+
+	private async startCursor(
+		tx: ReadTransactionApi<BranchNode<K> | LeafNode<K, V>>
+	) {
 		const cursor: NodeCursor<K, V> = {
 			nodePath: [],
 			indexPath: [],
 		}
-		const root = this.nodes.get("root")
+		const root = await tx.get("root")
 		if (!root) return cursor
 		cursor.nodePath.push(root)
 
@@ -189,7 +192,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			if (node.leaf) break
 			const childIndex = 0
 			const childId = node.children[childIndex].childId
-			const child = this.nodes.get(childId)
+			const child = await tx.get(childId)
 			if (!child) throw new Error("Broken.")
 			cursor.nodePath.unshift(child)
 			cursor.indexPath.unshift(childIndex)
@@ -197,7 +200,10 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 		return cursor
 	}
 
-	private nextCursor(cursor: NodeCursor<K, V>): NodeCursor<K, V> | undefined {
+	private async nextCursor(
+		tx: ReadTransactionApi<BranchNode<K> | LeafNode<K, V>>,
+		cursor: NodeCursor<K, V>
+	) {
 		// console.log(cursor)
 		cursor = {
 			nodePath: [...cursor.nodePath],
@@ -218,7 +224,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				const parent = cursor.nodePath[j + 1] as BranchNode<K>
 				const parentIndex = cursor.indexPath[j]
 				const childId = parent.children[parentIndex].childId
-				const child = this.nodes.get(childId)
+				const child = await tx.get(childId)
 				if (!child) throw new Error("Broken.")
 				cursor.nodePath[j] = child
 				if (j > 0) cursor.indexPath[j - 1] = 0
@@ -227,12 +233,14 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 		}
 	}
 
-	private endCursor() {
+	private async endCursor(
+		tx: ReadTransactionApi<BranchNode<K> | LeafNode<K, V>>
+	) {
 		const cursor: NodeCursor<K, V> = {
 			nodePath: [],
 			indexPath: [],
 		}
-		const root = this.nodes.get("root")
+		const root = await tx.get("root")
 		if (!root) return cursor
 		cursor.nodePath.push(root)
 		while (true) {
@@ -240,7 +248,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			if (node.leaf) break
 			const childIndex = node.children.length - 1
 			const childId = node.children[childIndex].childId
-			const child = this.nodes.get(childId)
+			const child = await tx.get(childId)
 			if (!child) throw new Error("Broken.")
 			cursor.nodePath.unshift(child)
 			cursor.indexPath.unshift(childIndex)
@@ -248,7 +256,10 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 		return cursor
 	}
 
-	private prevCursor(cursor: NodeCursor<K, V>): NodeCursor<K, V> | undefined {
+	private async prevCursor(
+		tx: ReadTransactionApi<BranchNode<K> | LeafNode<K, V>>,
+		cursor: NodeCursor<K, V>
+	) {
 		cursor = {
 			nodePath: [...cursor.nodePath],
 			indexPath: [...cursor.indexPath],
@@ -267,7 +278,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				const parent = cursor.nodePath[j + 1] as BranchNode<K>
 				const parentIndex = cursor.indexPath[j]
 				const childId = parent.children[parentIndex].childId
-				const child = this.nodes.get(childId)
+				const child = await tx.get(childId)
 				if (!child) throw new Error("Broken.")
 				cursor.nodePath[j] = child
 				if (j > 0)
@@ -279,7 +290,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 		}
 	}
 
-	list = (
+	list = async (
 		args: {
 			gt?: K
 			gte?: K
@@ -289,104 +300,71 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			reverse?: boolean
 		} = {}
 	) => {
-		const results: { key: K; value: V }[] = []
+		return this.lock.withRead(async () => {
+			const tx = new ReadTransaction(this.storage)
+			const results: { key: K; value: V }[] = []
 
-		if (args.gt !== undefined && args.gte !== undefined)
-			throw new Error("Invalid bounds: {gt, gte}")
-		if (args.lt !== undefined && args.lte !== undefined)
-			throw new Error("Invalid bounds: {lt, lte}")
+			if (args.gt !== undefined && args.gte !== undefined)
+				throw new Error("Invalid bounds: {gt, gte}")
+			if (args.lt !== undefined && args.lte !== undefined)
+				throw new Error("Invalid bounds: {lt, lte}")
 
-		const start =
-			args.gt !== undefined
-				? args.gt
-				: args.gte !== undefined
-				? args.gte
-				: undefined
-		const startOpen = args.gt !== undefined
-		const end =
-			args.lt !== undefined
-				? args.lt
-				: args.lte !== undefined
-				? args.lte
-				: undefined
-		const endOpen = args.lt !== undefined
+			const start =
+				args.gt !== undefined
+					? args.gt
+					: args.gte !== undefined
+					? args.gte
+					: undefined
+			const startOpen = args.gt !== undefined
+			const end =
+				args.lt !== undefined
+					? args.lt
+					: args.lte !== undefined
+					? args.lte
+					: undefined
+			const endOpen = args.lt !== undefined
 
-		if (start !== undefined && end !== undefined) {
-			const comp = this.compareKey(start, end)
-			if (comp > 0) {
-				console.warn("Invalid bounds.", args)
-				return results
-			}
-			if (comp === 0 && (startOpen || endOpen)) {
-				console.warn("Invalid bounds.", args)
-				return results
-			}
-		}
-
-		let startKey: NodeCursor<K, V> | undefined
-		let endKey: NodeCursor<K, V> | undefined
-		if (start !== undefined) {
-			startKey = this.findPath(start)
-		} else {
-			startKey = this.startCursor()
-		}
-		if (end !== undefined) {
-			endKey = this.findPath(end)
-		} else {
-			endKey = this.endCursor()
-		}
-
-		if (args.reverse) {
-			const leaf = endKey.nodePath[0] as LeafNode<K, V>
-			if (end !== undefined) {
-				const result = this.leafValues.search(leaf.values, end)
-				const index =
-					result.found !== undefined
-						? endOpen
-							? result.found
-							: result.found + 1
-						: result.closest
-				results.push(...leaf.values.slice(0, index).reverse())
-			} else {
-				results.push(...leaf.values.slice(0).reverse())
-			}
-
-			// Start bound in the same leaf.
-			if (
-				start !== undefined &&
-				this.compareKey(leaf.values[0].key, start) <= 0
-			) {
-				const result = this.leafValues.search(leaf.values, start)
-				if (result.found !== undefined) {
-					const startIndex = startOpen
-						? results.length - result.found - 1
-						: results.length - result.found
-					results.splice(startIndex, results.length)
-				} else {
-					results.splice(results.length - result.closest, results.length)
-				}
-
-				// Start and limit bound
-				if (args.limit && results.length >= args.limit) {
-					results.splice(args.limit, results.length)
+			if (start !== undefined && end !== undefined) {
+				const comp = this.compareKey(start, end)
+				if (comp > 0) {
+					console.warn("Invalid bounds.", args)
 					return results
 				}
-				return results
+				if (comp === 0 && (startOpen || endOpen)) {
+					console.warn("Invalid bounds.", args)
+					return results
+				}
 			}
 
-			// Limit bound
-			if (args.limit && results.length >= args.limit) {
-				results.splice(args.limit, results.length)
-				return results
+			let startKey: NodeCursor<K, V> | undefined
+			let endKey: NodeCursor<K, V> | undefined
+			if (start !== undefined) {
+				startKey = await this.findPath(tx, start)
+			} else {
+				startKey = await this.startCursor(tx)
+			}
+			if (end !== undefined) {
+				endKey = await this.findPath(tx, end)
+			} else {
+				endKey = await this.endCursor(tx)
 			}
 
-			let cursor: NodeCursor<K, V> | undefined = endKey
-			while ((cursor = this.prevCursor(cursor))) {
-				const leaf = cursor.nodePath[0] as LeafNode<K, V>
+			if (args.reverse) {
+				const leaf = endKey.nodePath[0] as LeafNode<K, V>
+				if (end !== undefined) {
+					const result = this.leafValues.search(leaf.values, end)
+					const index =
+						result.found !== undefined
+							? endOpen
+								? result.found
+								: result.found + 1
+							: result.closest
+					results.push(...leaf.values.slice(0, index).reverse())
+				} else {
+					results.push(...leaf.values.slice(0).reverse())
+				}
 
-				results.push(...leaf.values.slice(0).reverse())
-
-				// Start bound
+				// Start bound in the same leaf.
 				if (
 					start !== undefined &&
 					this.compareKey(leaf.values[0].key, start) <= 0
@@ -414,74 +392,76 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 					results.splice(args.limit, results.length)
 					return results
 				}
-			}
 
-			return results
-		}
+				let cursor: NodeCursor<K, V> | undefined = endKey
+				while ((cursor = await this.prevCursor(tx, cursor))) {
+					const leaf = cursor.nodePath[0] as LeafNode<K, V>
 
-		let startOffset = 0
-		const leaf = startKey.nodePath[0] as LeafNode<K, V>
-		if (start !== undefined) {
-			const result = this.leafValues.search(leaf.values, start)
-			const index =
-				result.found !== undefined
-					? startOpen
-						? result.found + 1
-						: result.found
-					: result.closest
-			startOffset = index
-			results.push(...leaf.values.slice(index))
-		} else {
-			results.push(...leaf.values)
-		}
+					results.push(...leaf.values.slice(0).reverse())
 
-		// End bound in the same leaf.
-		if (
-			end !== undefined &&
-			this.compareKey(leaf.values[leaf.values.length - 1].key, end) >= 0
-		) {
-			const result = this.leafValues.search(leaf.values, end)
+					// Start bound
+					if (
+						start !== undefined &&
+						this.compareKey(leaf.values[0].key, start) <= 0
+					) {
+						const result = this.leafValues.search(leaf.values, start)
+						if (result.found !== undefined) {
+							const startIndex = startOpen
+								? results.length - result.found - 1
+								: results.length - result.found
+							results.splice(startIndex, results.length)
+						} else {
+							results.splice(results.length - result.closest, results.length)
+						}
 
-			if (result.found !== undefined) {
-				const endIndex = endOpen
-					? result.found - startOffset
-					: result.found + 1 - startOffset
-				results.splice(endIndex, results.length)
-			} else {
-				results.splice(result.closest - startOffset, results.length)
-			}
+						// Start and limit bound
+						if (args.limit && results.length >= args.limit) {
+							results.splice(args.limit, results.length)
+							return results
+						}
+						return results
+					}
 
-			// End and limit bound
-			if (args.limit && results.length >= args.limit) {
-				results.splice(args.limit, results.length)
+					// Limit bound
+					if (args.limit && results.length >= args.limit) {
+						results.splice(args.limit, results.length)
+						return results
+					}
+				}
+
 				return results
 			}
-			return results
-		}
 
-		// Limit bound
-		if (args.limit && results.length >= args.limit) {
-			results.splice(args.limit, results.length)
-			return results
-		}
+			let startOffset = 0
+			const leaf = startKey.nodePath[0] as LeafNode<K, V>
+			if (start !== undefined) {
+				const result = this.leafValues.search(leaf.values, start)
+				const index =
+					result.found !== undefined
+						? startOpen
+							? result.found + 1
+							: result.found
+						: result.closest
+				startOffset = index
+				results.push(...leaf.values.slice(index))
+			} else {
+				results.push(...leaf.values)
+			}
 
-		let cursor: NodeCursor<K, V> | undefined = startKey
-		while ((cursor = this.nextCursor(cursor))) {
-			const leaf = cursor.nodePath[0] as LeafNode<K, V>
-
-			results.push(...leaf.values)
-
-			// End bound
+			// End bound in the same leaf.
 			if (
 				end !== undefined &&
 				this.compareKey(leaf.values[leaf.values.length - 1].key, end) >= 0
 			) {
-				const result = this.leafValues.search(results, end)
+				const result = this.leafValues.search(leaf.values, end)
+
 				if (result.found !== undefined) {
-					const endIndex = endOpen ? result.found : result.found + 1
+					const endIndex = endOpen
+						? result.found - startOffset
+						: result.found + 1 - startOffset
 					results.splice(endIndex, results.length)
 				} else {
-					results.splice(result.closest, results.length)
+					results.splice(result.closest - startOffset, results.length)
 				}
 
 				// End and limit bound
@@ -497,17 +477,66 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				results.splice(args.limit, results.length)
 				return results
 			}
-		}
 
-		return results
+			let cursor: NodeCursor<K, V> | undefined = startKey
+			while ((cursor = await this.nextCursor(tx, cursor))) {
+				const leaf = cursor.nodePath[0] as LeafNode<K, V>
+
+				results.push(...leaf.values)
+
+				// End bound
+				if (
+					end !== undefined &&
+					this.compareKey(leaf.values[leaf.values.length - 1].key, end) >= 0
+				) {
+					const result = this.leafValues.search(results, end)
+					if (result.found !== undefined) {
+						const endIndex = endOpen ? result.found : result.found + 1
+						results.splice(endIndex, results.length)
+					} else {
+						results.splice(result.closest, results.length)
+					}
+
+					// End and limit bound
+					if (args.limit && results.length >= args.limit) {
+						results.splice(args.limit, results.length)
+						return results
+					}
+					return results
+				}
+
+				// Limit bound
+				if (args.limit && results.length >= args.limit) {
+					results.splice(args.limit, results.length)
+					return results
+				}
+			}
+
+			return results
+		})
 	}
 
-	set = (key: K, value: V) => {
-		const { nodePath, indexPath } = this.findPath(key)
+	write = async (tx: {
+		set?: { key: string; value: V }[]
+		delete?: string[]
+	}) => {
+		return this.lock.withWrite(async () => {
+			const tx = new ReadWriteTransaction(this.storage)
+
+			await tx.commit()
+		})
+	}
+
+	private async set(
+		tx: ReadWriteTransactionApi<BranchNode<K> | LeafNode<K, V>>,
+		key: K,
+		value: V
+	) {
+		const { nodePath, indexPath } = await this.findPath(tx, key)
 
 		// Intitalize root node.
 		if (nodePath.length === 0) {
-			this.nodes.set("root", {
+			tx.set("root", {
 				leaf: true,
 				id: "root",
 				values: [{ key, value }],
@@ -536,7 +565,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 					leaf: true,
 					values: rightValues,
 				}
-				this.nodes.set(rightNode.id, rightNode)
+				tx.set(rightNode.id, rightNode)
 				const rightMinKey = rightNode.values[0].key
 
 				if (node.id === "root") {
@@ -546,7 +575,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 						// NOTE: this array was mutated above.
 						values: node.values,
 					}
-					this.nodes.set(leftNode.id, leftNode)
+					tx.set(leftNode.id, leftNode)
 					const rootNode: BranchNode<K> = {
 						id: "root",
 						leaf: false,
@@ -555,7 +584,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 							{ minKey: rightMinKey, childId: rightNode.id },
 						],
 					}
-					this.nodes.set("root", rootNode)
+					tx.set("root", rootNode)
 					break
 				}
 
@@ -580,7 +609,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				id: randomId(),
 				children: rightChildren,
 			}
-			this.nodes.set(rightNode.id, rightNode)
+			tx.set(rightNode.id, rightNode)
 			const rightMinKey = rightNode.children[0].minKey
 
 			if (node.id === "root") {
@@ -589,7 +618,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 					// NOTE: this array was mutated above.
 					children: node.children,
 				}
-				this.nodes.set(leftNode.id, leftNode)
+				tx.set(leftNode.id, leftNode)
 				const rootNode: BranchNode<K> = {
 					id: "root",
 					children: [
@@ -597,7 +626,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 						{ minKey: rightMinKey, childId: rightNode.id },
 					],
 				}
-				this.nodes.set("root", rootNode)
+				tx.set("root", rootNode)
 				break
 			}
 
@@ -616,8 +645,11 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 		}
 	}
 
-	delete = (key: K) => {
-		const root = this.nodes.get("root")
+	private async delete(
+		tx: ReadWriteTransactionApi<BranchNode<K> | LeafNode<K, V>>,
+		key: K
+	) {
+		const root = await tx.get("root")
 		if (!root) return
 
 		// Delete from leaf node.
@@ -637,7 +669,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			const index =
 				result.found !== undefined ? result.found : result.closest - 1
 			const childId = node.children[index].childId
-			const child = this.nodes.get(childId)
+			const child = await tx.get(childId)
 			if (!child) throw Error("Missing child node.")
 			nodePath.unshift(child)
 			indexPath.unshift(index)
@@ -652,17 +684,17 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 
 				// Cleanup an empty root node.
 				if (node.children.length === 0) {
-					this.nodes.delete("root")
+					tx.delete("root")
 					return
 				}
 
 				// A root node with one child becomes its child.
 				if (node.children.length === 1) {
 					const childId = node.children[0].childId
-					const childNode = this.nodes.get(childId)
+					const childNode = await tx.get(childId)
 					if (!childNode) throw new Error("Broken.")
-					this.nodes.set("root", { ...childNode, id: "root" })
-					this.nodes.delete(childId)
+					tx.set("root", { ...childNode, id: "root" })
+					tx.delete(childId)
 				}
 
 				return
@@ -693,7 +725,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			if (node.leaf) {
 				if (parentIndex === 0) {
 					const rightId = parent.children[parentIndex + 1].childId
-					const rightSibling = this.nodes.get(rightId) as typeof node
+					const rightSibling = (await tx.get(rightId)) as typeof node
 					if (!rightSibling) throw new Error("Broken.")
 
 					const combinedSize = node.values.length + rightSibling.values.length
@@ -721,7 +753,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 					node.values.push(...rightSibling.values)
 					// Delete rightSibling
 					parent.children.splice(1, 1)
-					this.nodes.delete(rightSibling.id)
+					tx.delete(rightSibling.id)
 					// Update parent minKey
 					const leftMost = parent.children[0].minKey === null
 					const minKey = leftMost ? null : node.values[0].key
@@ -733,7 +765,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				}
 
 				const leftId = parent.children[parentIndex - 1].childId
-				const leftSibling = this.nodes.get(leftId) as typeof node
+				const leftSibling = (await tx.get(leftId)) as typeof node
 				if (!leftSibling) throw new Error("Broken.")
 
 				const combinedSize = leftSibling.values.length + node.values.length
@@ -757,7 +789,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				leftSibling.values.push(...node.values)
 				// Delete the node
 				parent.children.splice(parentIndex, 1)
-				this.nodes.delete(node.id)
+				tx.delete(node.id)
 				// No need to update minKey because we added to the right.
 
 				// Recur
@@ -768,7 +800,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			// Merge or redistribute branch nodes.
 			if (parentIndex === 0) {
 				const rightId = parent.children[parentIndex + 1].childId
-				const rightSibling = this.nodes.get(rightId) as typeof node
+				const rightSibling = (await tx.get(rightId)) as typeof node
 				if (!rightSibling) throw new Error("Broken.")
 
 				const combinedSize = node.children.length + rightSibling.children.length
@@ -796,7 +828,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				node.children.push(...rightSibling.children)
 				// Delete rightSibling
 				parent.children.splice(1, 1)
-				this.nodes.delete(rightSibling.id)
+				tx.delete(rightSibling.id)
 				// Update parent minKey
 				const leftMost = parent.children[0].minKey === null
 				const minKey = leftMost ? null : node.children[0].minKey
@@ -808,7 +840,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			}
 
 			const leftId = parent.children[parentIndex - 1].childId
-			const leftSibling = this.nodes.get(leftId) as typeof node
+			const leftSibling = (await tx.get(leftId)) as typeof node
 			if (!leftSibling) throw new Error("Broken.")
 
 			const combinedSize = leftSibling.children.length + node.children.length
@@ -832,33 +864,13 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			leftSibling.children.push(...node.children)
 			// Delete the node
 			parent.children.splice(parentIndex, 1)
-			this.nodes.delete(node.id)
+			tx.delete(node.id)
 			// No need to update minKey because we added to the right.
 
 			// Recur
 			node = parent
 			continue
 		}
-	}
-
-	depth() {
-		const root = this.nodes.get("root")
-		if (!root) return 0
-		let depth = 1
-		let node = root
-		while (!node.leaf) {
-			depth += 1
-			const nextNode = this.nodes.get(node.children[0].childId)
-			if (!nextNode) throw new Error("Broken.")
-			node = nextNode
-		}
-		return depth
-	}
-
-	clone() {
-		const cloned = new AsyncBinaryPlusTree<K, V>(this.minSize, this.maxSize)
-		cloned.nodes = cloneDeep(this.nodes)
-		return cloned
 	}
 }
 
