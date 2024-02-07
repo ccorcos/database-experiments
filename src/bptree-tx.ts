@@ -158,6 +158,7 @@ export class BinaryPlusTransactionalTree {
 			const rightNode: LeafNode | BranchNode = {
 				id: randomId(),
 				leaf: node.leaf,
+				// TODO: fix mutation!
 				values: node.values.splice(splitIndex),
 			}
 			tx.set(rightNode.id, rightNode)

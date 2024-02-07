@@ -203,18 +203,24 @@ export class AsyncKeyValueStorage {
 	map = new Map<string, any>()
 
 	async get(key: string) {
+		console.log("GET", key, this.map.get(key))
 		return cloneDeep(this.map.get(key))
 	}
 
 	async write(tx: { set?: { key: string; value: any }[]; delete?: string[] }) {
-		for (const { key, value } of tx.set || [])
+		for (const { key, value } of tx.set || []) {
+			console.log("SET", key, value)
 			this.map.set(key, cloneDeep(value))
-		for (const key of tx.delete || []) this.map.delete(key)
+		}
+		for (const key of tx.delete || []) {
+			console.log("DELETE", key)
+			this.map.delete(key)
+		}
 	}
 }
 
 describe("AsyncBinaryPlusTree", () => {
-	describe("structural tests 2-4", async () => {
+	describe.only("structural tests 2-4", async () => {
 		const storage = new AsyncKeyValueStorage()
 		const tree = new AsyncBinaryPlusTree(storage, 2, 4)
 		await test(tree, structuralTests24)
@@ -728,7 +734,7 @@ async function toKeyTree(
 	tree: AsyncBinaryPlusTree,
 	id = "root"
 ): Promise<KeyTree> {
-	const node = await tree.get(id)
+	const node = await tree.storage.get(id)
 	if (!node) throw new Error("Missing node!")
 
 	const keys = node.leaf
@@ -736,7 +742,9 @@ async function toKeyTree(
 		: node.children.map((v) => v.minKey)
 
 	if (node.leaf) return { keys: keys }
-	const subtrees = node.children.map((v) => toKeyTree(tree, v.childId))
+	const subtrees = await Promise.all(
+		node.children.map((v) => toKeyTree(tree, v.childId))
+	)
 
 	return { keys: keys, children: subtrees }
 }
@@ -781,7 +789,7 @@ async function inspect(tree: AsyncBinaryPlusTree) {
 
 /** Check for node sizes. */
 async function verify(tree: AsyncBinaryPlusTree, id = "root") {
-	const node = await tree.get(id)
+	const node = await tree.storage.get(id)
 	if (id === "root") {
 		const storage = tree.storage as AsyncKeyValueStorage
 		assert.equal(await countNodes(tree), storage.map.size)
@@ -801,7 +809,7 @@ async function verify(tree: AsyncBinaryPlusTree, id = "root") {
 }
 
 async function countNodes(tree: AsyncBinaryPlusTree, id = "root") {
-	const node = await tree.get(id)
+	const node = await tree.storage.get(id)
 	if (id === "root") {
 		if (!node) return 0
 		if (node.leaf) return 1
@@ -832,13 +840,13 @@ function cloneTree<K, V>(tree: AsyncBinaryPlusTree<K, V>) {
 }
 
 async function treeDepth(tree: AsyncBinaryPlusTree) {
-	const root = await tree.get("root")
+	const root = await tree.storage.get("root")
 	if (!root) return 0
 	let depth = 1
 	let node = root
 	while (!node.leaf) {
 		depth += 1
-		const nextNode = await tree.get(node.children[0].childId)
+		const nextNode = await tree.storage.get(node.children[0].childId)
 		if (!nextNode) throw new Error("Broken.")
 		node = nextNode
 	}
