@@ -625,7 +625,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				tx.set(newParent.id, newParent)
 
 				// Recur
-				node = parent
+				node = newParent
 				continue
 			}
 
@@ -673,7 +673,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			tx.set(newParent.id, newParent)
 
 			// Recur
-			node = parent
+			node = newParent
 		}
 	}
 
@@ -795,7 +795,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 								childId: newParent.children[parentIndex].childId,
 							}
 						}
-						const rightMinKey = rightSibling.values[0].key
+						const rightMinKey = newRight.values[0].key
 						newParent.children[parentIndex + 1] = {
 							minKey: rightMinKey,
 							childId: newParent.children[parentIndex + 1].childId,

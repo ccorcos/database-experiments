@@ -203,30 +203,30 @@ export class AsyncKeyValueStorage {
 	map = new Map<string, any>()
 
 	async get(key: string) {
-		console.log("GET", key, this.map.get(key))
+		// console.log("GET", key, this.map.get(key))
 		return cloneDeep(this.map.get(key))
 	}
 
 	async write(tx: { set?: { key: string; value: any }[]; delete?: string[] }) {
 		for (const { key, value } of tx.set || []) {
-			console.log("SET", key, value)
+			// console.log("SET", key, value)
 			this.map.set(key, cloneDeep(value))
 		}
 		for (const key of tx.delete || []) {
-			console.log("DELETE", key)
+			// console.log("DELETE", key)
 			this.map.delete(key)
 		}
 	}
 }
 
 describe("AsyncBinaryPlusTree", () => {
-	describe.only("structural tests 2-4", async () => {
+	describe("structural tests 2-4", async () => {
 		const storage = new AsyncKeyValueStorage()
 		const tree = new AsyncBinaryPlusTree(storage, 2, 4)
 		await test(tree, structuralTests24)
 	})
 
-	describe("property test 2-4 * 100", async () => {
+	describe.only("property test 2-4 * 100", async () => {
 		await propertyTest({ minSize: 2, maxSize: 4, testSize: 100 })
 	})
 
