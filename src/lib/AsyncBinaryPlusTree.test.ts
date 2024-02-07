@@ -1,5 +1,6 @@
 import { strict as assert } from "assert"
 import { jsonCodec } from "lexicodec"
+import { cloneDeep } from "lodash"
 import { describe, it } from "mocha"
 import { AsyncBinaryPlusTree } from "./AsyncBinaryPlusTree"
 
@@ -198,21 +199,36 @@ const structuralTests24 = `
 
 `
 
+export class AsyncKeyValueStorage {
+	map = new Map<string, any>()
+
+	async get(key: string) {
+		return cloneDeep(this.map.get(key))
+	}
+
+	async write(tx: { set?: { key: string; value: any }[]; delete?: string[] }) {
+		for (const { key, value } of tx.set || [])
+			this.map.set(key, cloneDeep(value))
+		for (const key of tx.delete || []) this.map.delete(key)
+	}
+}
+
 describe("AsyncBinaryPlusTree", () => {
-	describe("structural tests 2-4", () => {
-		const tree = new AsyncBinaryPlusTree(2, 4)
-		test(tree, structuralTests24)
+	describe("structural tests 2-4", async () => {
+		const storage = new AsyncKeyValueStorage()
+		const tree = new AsyncBinaryPlusTree(storage, 2, 4)
+		await test(tree, structuralTests24)
 	})
 
-	describe("property test 2-4 * 100", () => {
-		propertyTest({ minSize: 2, maxSize: 4, testSize: 100 })
+	describe("property test 2-4 * 100", async () => {
+		await propertyTest({ minSize: 2, maxSize: 4, testSize: 100 })
 	})
 
-	describe("property test 3-6 * 100", () => {
-		propertyTest({ minSize: 3, maxSize: 6, testSize: 100 })
+	describe("property test 3-6 * 100", async () => {
+		await propertyTest({ minSize: 3, maxSize: 6, testSize: 100 })
 	})
 
-	function propertyTest(args: {
+	async function propertyTest(args: {
 		minSize: number
 		maxSize: number
 		testSize: number
@@ -220,18 +236,19 @@ describe("AsyncBinaryPlusTree", () => {
 		const size = args.testSize
 		const numbers = randomNumbers(size)
 
-		const tree = new AsyncBinaryPlusTree(args.minSize, args.maxSize)
+		const storage = new AsyncKeyValueStorage()
+		const tree = new AsyncBinaryPlusTree(storage, args.minSize, args.maxSize)
 		for (let i = 0; i < size; i++) {
 			const n = numbers[i]
-			it(`Set ${i} : ${n}`, () => {
+			it(`Set ${i} : ${n}`, async () => {
 				// it(`+ ${n}`, () => {
-				tree.set(n, n.toString())
-				verify(tree)
+				await tree.set(n, n.toString())
+				await verify(tree)
 
 				// Get works on every key so far.
 				for (let j = 0; j <= i; j++) {
 					const x = numbers[j]
-					assert.equal(tree.get(x), x.toString())
+					assert.equal(await tree.get(x), x.toString())
 				}
 				// })
 
@@ -240,15 +257,15 @@ describe("AsyncBinaryPlusTree", () => {
 					const x = numbers[j]
 
 					// it(`Overwrite ${j}: ${x}`, () => {
-					const t = tree.clone()
-					t.set(x, x * 2)
-					verify(t)
+					const t = cloneTree(tree)
+					await t.set(x, x * 2)
+					await verify(t)
 
 					// Check get on all keys.
 					for (let k = 0; k <= i; k++) {
 						const y = numbers[k]
-						if (x === y) assert.equal(t.get(y), y * 2)
-						else assert.equal(t.get(y), y.toString())
+						if (x === y) assert.equal(await t.get(y), y * 2)
+						else assert.equal(await t.get(y), y.toString())
 					}
 					// })
 				}
@@ -258,22 +275,15 @@ describe("AsyncBinaryPlusTree", () => {
 					const x = numbers[j]
 
 					// it(`Delete ${j} : ${x}`, () => {
-					const t = tree.clone()
-					t.delete(x)
-					try {
-						verify(t)
-					} catch (error) {
-						console.log("BEFORE", inspect(tree))
-						console.log("DELETE", x)
-						console.log("AFTER", inspect(t))
-						throw error
-					}
+					const t = cloneTree(tree)
+					await t.delete(x)
+					await verify(t)
 
 					// Check get on all keys.
 					for (let k = 0; k <= i; k++) {
 						const y = numbers[k]
-						if (x === y) assert.equal(t.get(y), undefined)
-						else assert.equal(t.get(y), y.toString())
+						if (x === y) assert.equal(await t.get(y), undefined)
+						else assert.equal(await t.get(y), y.toString())
 					}
 					// })
 				}
@@ -281,41 +291,48 @@ describe("AsyncBinaryPlusTree", () => {
 		}
 	}
 
-	it("big tree", () => {
+	it("big tree", async () => {
 		const numbers = randomNumbers(20_000)
-		const tree = new AsyncBinaryPlusTree(3, 9)
+		const storage = new AsyncKeyValueStorage()
+		const tree = new AsyncBinaryPlusTree(storage, 3, 9)
 		for (const number of numbers) {
-			tree.set(number, number * 2)
-			assert.equal(tree.get(number), number * 2)
+			await tree.set(number, number * 2)
+			assert.equal(await tree.get(number), number * 2)
 		}
 		for (const number of numbers) {
-			tree.delete(number)
-			assert.equal(tree.get(number), undefined)
+			await tree.delete(number)
+			assert.equal(await tree.get(number), undefined)
 		}
-		assert.equal(tree.depth(), 1)
+		assert.equal(await treeDepth(tree), 1)
 	})
 
-	it("tuple keys", () => {
-		const tree = new AsyncBinaryPlusTree<any[], any>(3, 9, jsonCodec.compare)
+	it("tuple keys", async () => {
+		const storage = new AsyncKeyValueStorage()
+		const tree = new AsyncBinaryPlusTree<any[], any>(
+			storage,
+			3,
+			9,
+			jsonCodec.compare
+		)
 
 		const numbers = randomNumbers(2000)
 		for (const number of numbers) {
-			tree.set(["user", number], { id: number })
-			tree.set(["profile", number], number)
-			assert.deepEqual(tree.get(["user", number]), { id: number })
-			assert.deepEqual(tree.get(["profile", number]), number)
+			await tree.set(["user", number], { id: number })
+			await tree.set(["profile", number], number)
+			assert.deepEqual(await tree.get(["user", number]), { id: number })
+			assert.deepEqual(await tree.get(["profile", number]), number)
 		}
 
 		for (const number of numbers) {
-			tree.delete(["user", number])
-			assert.equal(tree.get(["user", number]), undefined)
+			await tree.delete(["user", number])
+			assert.equal(await tree.get(["user", number]), undefined)
 		}
 	})
 
-	describe("list", () => {
+	describe("list", async () => {
 		const listTest =
 			(tree, min, max) =>
-			(
+			async (
 				args: {
 					gt?: number
 					gte?: number
@@ -326,13 +343,13 @@ describe("AsyncBinaryPlusTree", () => {
 				} = {}
 			) => {
 				assert.deepEqual(
-					tree.list(args),
+					await tree.list(args),
 					listEvens(min, max)(args),
 					JSON.stringify(args)
 				)
 			}
 
-		it("manual tests", () => {
+		it("manual tests", async () => {
 			// All even numbers from 0 to 1998
 
 			// Test a few different tree sizes.
@@ -341,214 +358,221 @@ describe("AsyncBinaryPlusTree", () => {
 				[8, 21],
 				[50, 100],
 			]) {
-				const tree = new AsyncBinaryPlusTree(minSize, maxSize)
-				for (const { key, value } of listEvens(0, 1998)()) tree.set(key, value)
+				const storage = new AsyncKeyValueStorage()
+				const tree = new AsyncBinaryPlusTree(storage, minSize, maxSize)
+				for (const { key, value } of listEvens(0, 1998)())
+					await tree.set(key, value)
 
 				const testList = listTest(tree, 0, 1998)
 
 				// Entire thing
-				testList()
-				testList({ limit: 2 })
-				testList({ limit: 40 })
-				testList({ reverse: true })
-				testList({ reverse: true, limit: 40 })
-				testList({ reverse: true, limit: 4 })
+				await testList()
+				await testList({ limit: 2 })
+				await testList({ limit: 40 })
+				await testList({ reverse: true })
+				await testList({ reverse: true, limit: 40 })
+				await testList({ reverse: true, limit: 4 })
 
 				// Less than odd.
-				testList({ lt: 9 })
-				testList({ lt: 9, limit: 2 })
-				testList({ lt: 9, reverse: true })
-				testList({ lt: 9, reverse: true, limit: 2 })
-				testList({ lt: 199 })
-				testList({ lt: 199, limit: 40 })
-				testList({ lt: 199, reverse: true })
-				testList({ lt: 199, reverse: true, limit: 40 })
+				await testList({ lt: 9 })
+				await testList({ lt: 9, limit: 2 })
+				await testList({ lt: 9, reverse: true })
+				await testList({ lt: 9, reverse: true, limit: 2 })
+				await testList({ lt: 199 })
+				await testList({ lt: 199, limit: 40 })
+				await testList({ lt: 199, reverse: true })
+				await testList({ lt: 199, reverse: true, limit: 40 })
 
 				// Less than open bound.
-				testList({ lt: 10 })
-				testList({ lt: 10, limit: 2 })
-				testList({ lt: 10, reverse: true })
-				testList({ lt: 10, reverse: true, limit: 2 })
-				testList({ lt: 200 })
-				testList({ lt: 200, limit: 40 })
-				testList({ lt: 200, reverse: true })
-				testList({ lt: 200, reverse: true, limit: 40 })
+				await testList({ lt: 10 })
+				await testList({ lt: 10, limit: 2 })
+				await testList({ lt: 10, reverse: true })
+				await testList({ lt: 10, reverse: true, limit: 2 })
+				await testList({ lt: 200 })
+				await testList({ lt: 200, limit: 40 })
+				await testList({ lt: 200, reverse: true })
+				await testList({ lt: 200, reverse: true, limit: 40 })
 
 				// Less than odd closed bound.
-				testList({ lte: 9 })
-				testList({ lte: 9, limit: 2 })
-				testList({ lte: 9, reverse: true })
-				testList({ lte: 9, reverse: true, limit: 2 })
-				testList({ lte: 199 })
-				testList({ lte: 199, limit: 40 })
-				testList({ lte: 199, reverse: true })
-				testList({ lte: 199, reverse: true, limit: 40 })
+				await testList({ lte: 9 })
+				await testList({ lte: 9, limit: 2 })
+				await testList({ lte: 9, reverse: true })
+				await testList({ lte: 9, reverse: true, limit: 2 })
+				await testList({ lte: 199 })
+				await testList({ lte: 199, limit: 40 })
+				await testList({ lte: 199, reverse: true })
+				await testList({ lte: 199, reverse: true, limit: 40 })
 
 				// Less than closed bound.
-				testList({ lte: 10 })
-				testList({ lte: 10, limit: 2 })
-				testList({ lte: 10, reverse: true })
-				testList({ lte: 10, reverse: true, limit: 2 })
-				testList({ lte: 200 })
-				testList({ lte: 200, limit: 40 })
-				testList({ lte: 200, reverse: true })
-				testList({ lte: 200, reverse: true, limit: 40 })
+				await testList({ lte: 10 })
+				await testList({ lte: 10, limit: 2 })
+				await testList({ lte: 10, reverse: true })
+				await testList({ lte: 10, reverse: true, limit: 2 })
+				await testList({ lte: 200 })
+				await testList({ lte: 200, limit: 40 })
+				await testList({ lte: 200, reverse: true })
+				await testList({ lte: 200, reverse: true, limit: 40 })
 
 				// Less than left bound.
-				testList({ lt: -1 })
-				testList({ lt: -1, limit: 2 })
-				testList({ lt: -1, reverse: true })
-				testList({ lt: -1, reverse: true, limit: 2 })
-				testList({ lte: -1 })
-				testList({ lte: -1, limit: 2 })
-				testList({ lte: -1, reverse: true })
-				testList({ lte: -1, reverse: true, limit: 2 })
+				await testList({ lt: -1 })
+				await testList({ lt: -1, limit: 2 })
+				await testList({ lt: -1, reverse: true })
+				await testList({ lt: -1, reverse: true, limit: 2 })
+				await testList({ lte: -1 })
+				await testList({ lte: -1, limit: 2 })
+				await testList({ lte: -1, reverse: true })
+				await testList({ lte: -1, reverse: true, limit: 2 })
 
 				// Less than right bound
-				testList({ lt: 5000 })
-				testList({ lt: 5000, limit: 2 })
-				testList({ lt: 5000, reverse: true })
-				testList({ lt: 5000, reverse: true, limit: 2 })
-				testList({ lte: 5000 })
-				testList({ lte: 5000, limit: 2 })
-				testList({ lte: 5000, reverse: true })
-				testList({ lte: 5000, reverse: true, limit: 2 })
+				await testList({ lt: 5000 })
+				await testList({ lt: 5000, limit: 2 })
+				await testList({ lt: 5000, reverse: true })
+				await testList({ lt: 5000, reverse: true, limit: 2 })
+				await testList({ lte: 5000 })
+				await testList({ lte: 5000, limit: 2 })
+				await testList({ lte: 5000, reverse: true })
+				await testList({ lte: 5000, reverse: true, limit: 2 })
 
 				// Greater than odd.
-				testList({ gt: 1989 })
-				testList({ gt: 1989, limit: 2 })
-				testList({ gt: 1989, reverse: true })
-				testList({ gt: 1989, reverse: true, limit: 2 })
-				testList({ gt: 1781 })
-				testList({ gt: 1781, limit: 40 })
-				testList({ gt: 1781, reverse: true })
-				testList({ gt: 1781, reverse: true, limit: 40 })
+				await testList({ gt: 1989 })
+				await testList({ gt: 1989, limit: 2 })
+				await testList({ gt: 1989, reverse: true })
+				await testList({ gt: 1989, reverse: true, limit: 2 })
+				await testList({ gt: 1781 })
+				await testList({ gt: 1781, limit: 40 })
+				await testList({ gt: 1781, reverse: true })
+				await testList({ gt: 1781, reverse: true, limit: 40 })
 
 				// Greater than open bound.
-				testList({ gt: 1988 })
-				testList({ gt: 1988, limit: 2 })
-				testList({ gt: 1988, reverse: true })
-				testList({ gt: 1988, reverse: true, limit: 2 })
-				testList({ gt: 1780 })
-				testList({ gt: 1780, limit: 40 })
-				testList({ gt: 1780, reverse: true })
-				testList({ gt: 1780, reverse: true, limit: 40 })
+				await testList({ gt: 1988 })
+				await testList({ gt: 1988, limit: 2 })
+				await testList({ gt: 1988, reverse: true })
+				await testList({ gt: 1988, reverse: true, limit: 2 })
+				await testList({ gt: 1780 })
+				await testList({ gt: 1780, limit: 40 })
+				await testList({ gt: 1780, reverse: true })
+				await testList({ gt: 1780, reverse: true, limit: 40 })
 
 				// Greater than odd closed bound
-				testList({ gte: 1989 })
-				testList({ gte: 1989, limit: 2 })
-				testList({ gte: 1989, reverse: true })
-				testList({ gte: 1989, reverse: true, limit: 2 })
-				testList({ gte: 1781 })
-				testList({ gte: 1781, limit: 40 })
-				testList({ gte: 1781, reverse: true })
-				testList({ gte: 1781, reverse: true, limit: 40 })
+				await testList({ gte: 1989 })
+				await testList({ gte: 1989, limit: 2 })
+				await testList({ gte: 1989, reverse: true })
+				await testList({ gte: 1989, reverse: true, limit: 2 })
+				await testList({ gte: 1781 })
+				await testList({ gte: 1781, limit: 40 })
+				await testList({ gte: 1781, reverse: true })
+				await testList({ gte: 1781, reverse: true, limit: 40 })
 
 				// Greater than closed bound.
-				testList({ gte: 1988 })
-				testList({ gte: 1988, limit: 2 })
-				testList({ gte: 1988, reverse: true })
-				testList({ gte: 1988, reverse: true, limit: 2 })
-				testList({ gte: 1780 })
-				testList({ gte: 1780, limit: 40 })
-				testList({ gte: 1780, reverse: true })
-				testList({ gte: 1780, reverse: true, limit: 40 })
+				await testList({ gte: 1988 })
+				await testList({ gte: 1988, limit: 2 })
+				await testList({ gte: 1988, reverse: true })
+				await testList({ gte: 1988, reverse: true, limit: 2 })
+				await testList({ gte: 1780 })
+				await testList({ gte: 1780, limit: 40 })
+				await testList({ gte: 1780, reverse: true })
+				await testList({ gte: 1780, reverse: true, limit: 40 })
 
 				// Greater than left bound.
-				testList({ gt: -1 })
-				testList({ gt: -1, limit: 2 })
-				testList({ gt: -1, reverse: true })
-				testList({ gt: -1, reverse: true, limit: 2 })
-				testList({ gte: -1 })
-				testList({ gte: -1, limit: 2 })
-				testList({ gte: -1, reverse: true })
-				testList({ gte: -1, reverse: true, limit: 2 })
+				await testList({ gt: -1 })
+				await testList({ gt: -1, limit: 2 })
+				await testList({ gt: -1, reverse: true })
+				await testList({ gt: -1, reverse: true, limit: 2 })
+				await testList({ gte: -1 })
+				await testList({ gte: -1, limit: 2 })
+				await testList({ gte: -1, reverse: true })
+				await testList({ gte: -1, reverse: true, limit: 2 })
 
 				// Greater than right bound
-				testList({ gt: 5000 })
-				testList({ gt: 5000, limit: 2 })
-				testList({ gt: 5000, reverse: true })
-				testList({ gt: 5000, reverse: true, limit: 2 })
-				testList({ gte: 5000 })
-				testList({ gte: 5000, limit: 2 })
-				testList({ gte: 5000, reverse: true })
-				testList({ gte: 5000, reverse: true, limit: 2 })
+				await testList({ gt: 5000 })
+				await testList({ gt: 5000, limit: 2 })
+				await testList({ gt: 5000, reverse: true })
+				await testList({ gt: 5000, reverse: true, limit: 2 })
+				await testList({ gte: 5000 })
+				await testList({ gte: 5000, limit: 2 })
+				await testList({ gte: 5000, reverse: true })
+				await testList({ gte: 5000, reverse: true, limit: 2 })
 
 				// Within a branch
 
-				let sameLeaf = (args: { reverse?: boolean; limit?: number } = {}) => {
-					testList({ gt: 2, lt: 8, ...args })
-					testList({ gte: 2, lt: 8, ...args })
-					testList({ gt: 2, lte: 8, ...args })
-					testList({ gte: 2, lte: 8, ...args })
-
-					testList({ gt: 204, lt: 208, ...args })
-					testList({ gte: 204, lt: 208, ...args })
-					testList({ gt: 204, lte: 208, ...args })
-					testList({ gte: 204, lte: 208, ...args })
-
-					testList({ gt: 206, lt: 210, ...args })
-					testList({ gte: 206, lt: 210, ...args })
-					testList({ gt: 206, lte: 210, ...args })
-					testList({ gte: 206, lte: 210, ...args })
-
-					testList({ gt: 210, lt: 214, ...args })
-					testList({ gte: 210, lt: 214, ...args })
-					testList({ gt: 210, lte: 214, ...args })
-					testList({ gte: 210, lte: 214, ...args })
-				}
-				sameLeaf()
-				sameLeaf({ limit: 2 })
-				sameLeaf({ reverse: true })
-				sameLeaf({ reverse: true, limit: 2 })
-
-				let differentLeaves = (
+				let sameLeaf = async (
 					args: { reverse?: boolean; limit?: number } = {}
 				) => {
-					testList({ gt: 200, lt: 800, ...args })
-					testList({ gte: 200, lt: 800, ...args })
-					testList({ gt: 200, lte: 800, ...args })
-					testList({ gte: 200, lte: 800, ...args })
+					await testList({ gt: 2, lt: 8, ...args })
+					await testList({ gte: 2, lt: 8, ...args })
+					await testList({ gt: 2, lte: 8, ...args })
+					await testList({ gte: 2, lte: 8, ...args })
 
-					testList({ gt: 204, lt: 808, ...args })
-					testList({ gte: 204, lt: 808, ...args })
-					testList({ gt: 204, lte: 808, ...args })
-					testList({ gte: 204, lte: 808, ...args })
+					await testList({ gt: 204, lt: 208, ...args })
+					await testList({ gte: 204, lt: 208, ...args })
+					await testList({ gt: 204, lte: 208, ...args })
+					await testList({ gte: 204, lte: 208, ...args })
+
+					await testList({ gt: 206, lt: 210, ...args })
+					await testList({ gte: 206, lt: 210, ...args })
+					await testList({ gt: 206, lte: 210, ...args })
+					await testList({ gte: 206, lte: 210, ...args })
+
+					await testList({ gt: 210, lt: 214, ...args })
+					await testList({ gte: 210, lt: 214, ...args })
+					await testList({ gt: 210, lte: 214, ...args })
+					await testList({ gte: 210, lte: 214, ...args })
 				}
-				differentLeaves()
-				differentLeaves({ limit: 20 })
-				differentLeaves({ reverse: true })
-				differentLeaves({ reverse: true, limit: 20 })
+				await sameLeaf()
+				await sameLeaf({ limit: 2 })
+				await sameLeaf({ reverse: true })
+				await sameLeaf({ reverse: true, limit: 2 })
 
-				let bounds = (args: { reverse?: boolean; limit?: number } = {}) => {
-					testList({ gt: -100, lt: 100, ...args })
-					testList({ gte: -100, lt: 100, ...args })
-					testList({ gt: -100, lte: 100, ...args })
-					testList({ gte: -100, lte: 100, ...args })
+				let differentLeaves = async (
+					args: { reverse?: boolean; limit?: number } = {}
+				) => {
+					await testList({ gt: 200, lt: 800, ...args })
+					await testList({ gte: 200, lt: 800, ...args })
+					await testList({ gt: 200, lte: 800, ...args })
+					await testList({ gte: 200, lte: 800, ...args })
 
-					testList({ gt: 1900, lt: 2100, ...args })
-					testList({ gte: 1900, lt: 2100, ...args })
-					testList({ gt: 1900, lte: 2100, ...args })
-					testList({ gte: 1900, lte: 2100, ...args })
-
-					testList({ gt: -100, lt: 2100, ...args })
-					testList({ gte: -100, lt: 2100, ...args })
-					testList({ gt: -100, lte: 2100, ...args })
-					testList({ gte: -100, lte: 2100, ...args })
+					await testList({ gt: 204, lt: 808, ...args })
+					await testList({ gte: 204, lt: 808, ...args })
+					await testList({ gt: 204, lte: 808, ...args })
+					await testList({ gte: 204, lte: 808, ...args })
 				}
-				bounds()
-				bounds({ limit: 20 })
-				bounds({ reverse: true })
-				bounds({ reverse: true, limit: 20 })
+				await differentLeaves()
+				await differentLeaves({ limit: 20 })
+				await differentLeaves({ reverse: true })
+				await differentLeaves({ reverse: true, limit: 20 })
+
+				let bounds = async (
+					args: { reverse?: boolean; limit?: number } = {}
+				) => {
+					await testList({ gt: -100, lt: 100, ...args })
+					await testList({ gte: -100, lt: 100, ...args })
+					await testList({ gt: -100, lte: 100, ...args })
+					await testList({ gte: -100, lte: 100, ...args })
+
+					await testList({ gt: 1900, lt: 2100, ...args })
+					await testList({ gte: 1900, lt: 2100, ...args })
+					await testList({ gt: 1900, lte: 2100, ...args })
+					await testList({ gte: 1900, lte: 2100, ...args })
+
+					await testList({ gt: -100, lt: 2100, ...args })
+					await testList({ gte: -100, lt: 2100, ...args })
+					await testList({ gt: -100, lte: 2100, ...args })
+					await testList({ gte: -100, lte: 2100, ...args })
+				}
+				await bounds()
+				await bounds({ limit: 20 })
+				await bounds({ reverse: true })
+				await bounds({ reverse: true, limit: 20 })
 
 				// Random challenges from property test.
-				testList({ gt: -91, lt: 0 })
-				testList({ gt: 2, lt: 3 })
+				await testList({ gt: -91, lt: 0 })
+				await testList({ gt: 2, lt: 3 })
 			}
 		})
 
-		it("property tests", () => {
-			const tree = new AsyncBinaryPlusTree(3, 9)
+		it("property tests", async () => {
+			const storage = new AsyncKeyValueStorage()
+			const tree = new AsyncBinaryPlusTree(storage, 3, 9)
 
 			const min = 0
 			const max = 400
@@ -588,52 +612,54 @@ describe("AsyncBinaryPlusTree", () => {
 			}
 		})
 
-		it("smaller property tests", () => {
-			const tree = new AsyncBinaryPlusTree(3, 9)
+		it("smaller property tests", async () => {
+			const storage = new AsyncKeyValueStorage()
+			const tree = new AsyncBinaryPlusTree(storage, 3, 9)
 
 			const min = 0
 			const max = 100
 			const delta = 10
 
-			for (const { key, value } of listEvens(min, max)()) tree.set(key, value)
+			for (const { key, value } of listEvens(min, max)())
+				await tree.set(key, value)
 
 			const testList = listTest(tree, min, max)
 
 			for (let start = -min - delta; start < max + delta; start += 1) {
 				for (let end = start; end < max + delta; end += 1) {
 					if (start !== end) {
-						testList({ gt: start, lt: end })
-						testList({ gt: start, lt: end, limit: 1 })
-						testList({ gt: start, lt: end, limit: 2 })
-						testList({ gt: start, lt: end, limit: 40 })
-						testList({ gt: start, lt: end, reverse: true })
-						testList({ gt: start, lt: end, reverse: true, limit: 1 })
-						testList({ gt: start, lt: end, reverse: true, limit: 2 })
-						testList({ gt: start, lt: end, reverse: true, limit: 40 })
-						testList({ gte: start, lt: end })
-						testList({ gte: start, lt: end, limit: 1 })
-						testList({ gte: start, lt: end, limit: 2 })
-						testList({ gte: start, lt: end, limit: 40 })
-						testList({ gte: start, lt: end, reverse: true })
-						testList({ gte: start, lt: end, reverse: true, limit: 1 })
-						testList({ gte: start, lt: end, reverse: true, limit: 2 })
-						testList({ gte: start, lt: end, reverse: true, limit: 40 })
-						testList({ gt: start, lte: end })
-						testList({ gt: start, lte: end, limit: 2 })
-						testList({ gt: start, lte: end, limit: 40 })
-						testList({ gt: start, lte: end, reverse: true })
-						testList({ gt: start, lte: end, reverse: true, limit: 1 })
-						testList({ gt: start, lte: end, reverse: true, limit: 2 })
-						testList({ gt: start, lte: end, reverse: true, limit: 40 })
+						await testList({ gt: start, lt: end })
+						await testList({ gt: start, lt: end, limit: 1 })
+						await testList({ gt: start, lt: end, limit: 2 })
+						await testList({ gt: start, lt: end, limit: 40 })
+						await testList({ gt: start, lt: end, reverse: true })
+						await testList({ gt: start, lt: end, reverse: true, limit: 1 })
+						await testList({ gt: start, lt: end, reverse: true, limit: 2 })
+						await testList({ gt: start, lt: end, reverse: true, limit: 40 })
+						await testList({ gte: start, lt: end })
+						await testList({ gte: start, lt: end, limit: 1 })
+						await testList({ gte: start, lt: end, limit: 2 })
+						await testList({ gte: start, lt: end, limit: 40 })
+						await testList({ gte: start, lt: end, reverse: true })
+						await testList({ gte: start, lt: end, reverse: true, limit: 1 })
+						await testList({ gte: start, lt: end, reverse: true, limit: 2 })
+						await testList({ gte: start, lt: end, reverse: true, limit: 40 })
+						await testList({ gt: start, lte: end })
+						await testList({ gt: start, lte: end, limit: 2 })
+						await testList({ gt: start, lte: end, limit: 40 })
+						await testList({ gt: start, lte: end, reverse: true })
+						await testList({ gt: start, lte: end, reverse: true, limit: 1 })
+						await testList({ gt: start, lte: end, reverse: true, limit: 2 })
+						await testList({ gt: start, lte: end, reverse: true, limit: 40 })
 					}
-					testList({ gte: start, lte: end })
-					testList({ gte: start, lte: end, limit: 1 })
-					testList({ gte: start, lte: end, limit: 2 })
-					testList({ gte: start, lte: end, limit: 40 })
-					testList({ gte: start, lte: end, reverse: true })
-					testList({ gte: start, lte: end, reverse: true, limit: 1 })
-					testList({ gte: start, lte: end, reverse: true, limit: 2 })
-					testList({ gte: start, lte: end, reverse: true, limit: 40 })
+					await testList({ gte: start, lte: end })
+					await testList({ gte: start, lte: end, limit: 1 })
+					await testList({ gte: start, lte: end, limit: 2 })
+					await testList({ gte: start, lte: end, limit: 40 })
+					await testList({ gte: start, lte: end, reverse: true })
+					await testList({ gte: start, lte: end, reverse: true, limit: 1 })
+					await testList({ gte: start, lte: end, reverse: true, limit: 2 })
+					await testList({ gte: start, lte: end, reverse: true, limit: 40 })
 				}
 			}
 		})
@@ -670,21 +696,25 @@ function parseTests(str: string) {
 	})
 }
 
-function test(tree: AsyncBinaryPlusTree, str: string) {
+async function test(tree: AsyncBinaryPlusTree, str: string) {
 	for (const test of parseTests(structuralTests24)) {
 		let label = `${test.op} ${test.n}`
 		if (test.comment) label += " // " + test.comment
-		it(label, () => {
-			if (test.op === "+") tree.set(test.n, test.n.toString())
-			if (test.op === "-") tree.delete(test.n)
-			assert.equal(inspect(tree), test.tree, test.comment)
+		it(label, async () => {
+			if (test.op === "+") await tree.set(test.n, test.n.toString())
+			if (test.op === "-") await tree.delete(test.n)
+			assert.equal(await inspect(tree), test.tree, test.comment)
 
 			const value = test.op === "+" ? test.n.toString() : undefined
-			assert.equal(tree.get(test.n), value, test.comment)
+			assert.equal(await tree.get(test.n), value, test.comment)
 
-			assert.equal(tree.depth(), test.tree.split("\n").length, test.comment)
+			assert.equal(
+				await treeDepth(tree),
+				test.tree.split("\n").length,
+				test.comment
+			)
 
-			verify(tree)
+			await verify(tree)
 		})
 	}
 }
@@ -694,8 +724,11 @@ type KeyTree =
 	| { keys: Key[]; children?: undefined }
 	| { keys: Key[]; children: KeyTree[] }
 
-function toKeyTree(tree: AsyncBinaryPlusTree, id = "root"): KeyTree {
-	const node = tree.nodes.get(id)
+async function toKeyTree(
+	tree: AsyncBinaryPlusTree,
+	id = "root"
+): Promise<KeyTree> {
+	const node = await tree.get(id)
 	if (!node) throw new Error("Missing node!")
 
 	const keys = node.leaf
@@ -735,8 +768,8 @@ function print(x: any) {
 	return ""
 }
 
-function inspect(tree: AsyncBinaryPlusTree) {
-	const keyTree = toKeyTree(tree)
+async function inspect(tree: AsyncBinaryPlusTree) {
+	const keyTree = await toKeyTree(tree)
 	const layers = toTreeLayers(keyTree)
 	const str = layers
 		.map((layer) =>
@@ -747,40 +780,69 @@ function inspect(tree: AsyncBinaryPlusTree) {
 }
 
 /** Check for node sizes. */
-function verify(tree: AsyncBinaryPlusTree, id = "root") {
-	const node = tree.nodes.get(id)
+async function verify(tree: AsyncBinaryPlusTree, id = "root") {
+	const node = await tree.get(id)
 	if (id === "root") {
-		assert.equal(countNodes(tree), tree.nodes.size)
+		const storage = tree.storage as AsyncKeyValueStorage
+		assert.equal(await countNodes(tree), storage.map.size)
 		if (!node) return
 		if (node.leaf) return
-		for (const { childId } of node.children) verify(tree, childId)
+		for (const { childId } of node.children) await verify(tree, childId)
 		return
 	}
 
 	assert.ok(node)
 	const size = node.leaf ? node.values.length : node.children.length
 	assert.ok(size >= tree.minSize)
-	assert.ok(size <= tree.maxSize, inspect(tree))
+	assert.ok(size <= tree.maxSize, await inspect(tree))
 
 	if (node.leaf) return
 	for (const { childId } of node.children) verify(tree, childId)
 }
 
-function countNodes(tree: AsyncBinaryPlusTree, id = "root") {
-	const node = tree.nodes.get(id)
+async function countNodes(tree: AsyncBinaryPlusTree, id = "root") {
+	const node = await tree.get(id)
 	if (id === "root") {
 		if (!node) return 0
 		if (node.leaf) return 1
 		let count = 1
-		for (const { childId } of node.children) count += countNodes(tree, childId)
+		for (const { childId } of node.children)
+			count += await countNodes(tree, childId)
 		return count
 	}
 
 	assert.ok(node)
 	if (node.leaf) return 1
 	let count = 1
-	for (const { childId } of node.children) count += countNodes(tree, childId)
+	for (const { childId } of node.children)
+		count += await countNodes(tree, childId)
 	return count
+}
+
+function cloneTree<K, V>(tree: AsyncBinaryPlusTree<K, V>) {
+	const oldStorage = tree.storage as AsyncKeyValueStorage
+	const storage = new AsyncKeyValueStorage()
+	storage.map = cloneDeep(oldStorage.map)
+	return new AsyncBinaryPlusTree<K, V>(
+		storage,
+		tree.minSize,
+		tree.maxSize,
+		tree.compareKey
+	)
+}
+
+async function treeDepth(tree: AsyncBinaryPlusTree) {
+	const root = await tree.get("root")
+	if (!root) return 0
+	let depth = 1
+	let node = root
+	while (!node.leaf) {
+		depth += 1
+		const nextNode = await tree.get(node.children[0].childId)
+		if (!nextNode) throw new Error("Broken.")
+		node = nextNode
+	}
+	return depth
 }
 
 function listEvens(min: number, max: number) {

@@ -5,8 +5,9 @@ no latch crabbing.
 TODO
 - use async storage.
 	- no in-place mutation!
+	- concurrency and batch tests
+	- storage tests.
 - add a transaction helper
-
 
 */
 
@@ -516,18 +517,33 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 		})
 	}
 
-	write = async (tx: {
-		set?: { key: string; value: V }[]
-		delete?: string[]
-	}) => {
+	write = async (args: { set?: { key: K; value: V }[]; delete?: K[] }) => {
 		return this.lock.withWrite(async () => {
 			const tx = new ReadWriteTransaction(this.storage)
-
+			for (const { key, value } of args.set || [])
+				await this._set(tx, key, value)
+			for (const key of args.delete || []) await this._delete(tx, key)
 			await tx.commit()
 		})
 	}
 
-	private async set(
+	set = async (key: K, value: V) => {
+		return this.lock.withWrite(async () => {
+			const tx = new ReadWriteTransaction(this.storage)
+			await this._set(tx, key, value)
+			await tx.commit
+		})
+	}
+
+	delete = async (key: K) => {
+		return this.lock.withWrite(async () => {
+			const tx = new ReadWriteTransaction(this.storage)
+			await this._delete(tx, key)
+			await tx.commit
+		})
+	}
+
+	private async _set(
 		tx: ReadWriteTransactionApi<BranchNode<K> | LeafNode<K, V>>,
 		key: K,
 		value: V
@@ -645,7 +661,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 		}
 	}
 
-	private async delete(
+	private async _delete(
 		tx: ReadWriteTransactionApi<BranchNode<K> | LeafNode<K, V>>,
 		key: K
 	) {

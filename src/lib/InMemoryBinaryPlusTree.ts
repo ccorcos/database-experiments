@@ -775,7 +775,11 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 	}
 
 	clone() {
-		const cloned = new InMemoryBinaryPlusTree<K, V>(this.minSize, this.maxSize)
+		const cloned = new InMemoryBinaryPlusTree<K, V>(
+			this.minSize,
+			this.maxSize,
+			this.compareKey
+		)
 		cloned.nodes = cloneDeep(this.nodes)
 		return cloned
 	}
