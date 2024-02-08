@@ -355,6 +355,9 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				endKey = await this.endCursor(tx)
 			}
 
+			// No root node.
+			if (startKey.nodePath.length === 0) return []
+
 			if (args.reverse) {
 				const leaf = endKey.nodePath[0] as LeafNode<K, V>
 				if (end !== undefined) {

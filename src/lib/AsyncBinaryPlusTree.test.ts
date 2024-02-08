@@ -693,7 +693,7 @@ describe("AsyncBinaryPlusTree", function () {
 		})
 	})
 
-	it("concurreny reads and write", async () => {
+	it.only("concurreny reads and write", async () => {
 		const clock = new TestClock()
 
 		const sleep = (n: number) => clock.sleep(Math.random() * n)
@@ -721,6 +721,17 @@ describe("AsyncBinaryPlusTree", function () {
 				})
 			)
 
+		const listAll = () =>
+			Promise.all(
+				numbers.map(async (number) => {
+					await sleep(15)
+					await tree.list({
+						gt: number - Math.random() * 1000,
+						lt: number + Math.random() * 1000,
+					})
+				})
+			)
+
 		const deleteSome = (modN: number) =>
 			Promise.all(
 				numbers.map(async (number, index) => {
@@ -738,6 +749,7 @@ describe("AsyncBinaryPlusTree", function () {
 			readAll(),
 			readAll(),
 			readAll(),
+			listAll(),
 			deleteSome(7),
 			deleteSome(5),
 			deleteSome(5),
