@@ -326,88 +326,134 @@ Wrote some simple property tests just to verify they work.
 
 ## Performance Testing - Round 2
 
-HERE
 
-Performance...
-- bptree with sqlite vs bptree with leveldb vs sqlite vs leveldb
-	conclusion... b+ is slower, which make obvious sense. leveldb is 10x faster than sqlite.
+First, lets compare tree size performance. There's a trade-off between how big pages are and how costly a disk read is. However, it's totally possible (and likely) that the disk pages are cached in memory anyways since its likely only a MB or two or data.
+
+┌─────────┬──────────────┬───────────────────────┬─────────┬───────────┬─────────┐
+│ (index) │ Average Time │ Task Name             │ ops/sec │ Margin    │ Samples │
+├─────────┼──────────────┼───────────────────────┼─────────┼───────────┼─────────┤
+│ 0       │ '504.696ms'  │ 'b+level 50-100'      │ '1'     │ '±5.88%'  │ 4       │
+│ 1       │ '474.645ms'  │ 'b+level 100-200'     │ '2'     │ '±3.55%'  │ 5       │
+│ 2       │ '579.890ms'  │ 'b+level 200-400'     │ '1'     │ '±3.01%'  │ 4       │
+│ 3       │ '828.546ms'  │ 'b+level 400-800'     │ '1'     │ '±4.55%'  │ 3       │
+│ 4       │ '001.358s'   │ 'b+level 800-1600'    │ '0'     │ '±11.91%' │ 2       │
+│ 5       │ '002.426s'   │ 'b+level 2000-4000'   │ '0'     │ '±2.71%'  │ 2       │
+│ 6       │ '009.078s'   │ 'b+level 10000-20000' │ '0'     │ '±3.50%'  │ 2       │
+└─────────┴──────────────┴───────────────────────┴─────────┴───────────┴─────────┘
+
+Considering that Postgres doesn't even merge/redistribute on deletes, it's worth trying an approach that has a really small minSize. That will add some cost for subsequent reads after deletes but maybe it's not too bad.
+
+┌─────────┬──────────────┬───────────────────┬─────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name         │ ops/sec │ Margin   │ Samples │
+├─────────┼──────────────┼───────────────────┼─────────┼──────────┼─────────┤
+│ 0       │ '564.125ms'  │ 'b+level 4-9'     │ '1'     │ '±9.49%' │ 4       │
+│ 1       │ '440.392ms'  │ 'b+level 10-20'   │ '2'     │ '±4.44%' │ 5       │
+│ 2       │ '370.472ms'  │ 'b+level 20-40'   │ '2'     │ '±1.96%' │ 6       │
+│ 3       │ '463.307ms'  │ 'b+level 50-100'  │ '2'     │ '±2.68%' │ 5       │
+│ 4       │ '462.864ms'  │ 'b+level 1-100'   │ '2'     │ '±2.80%' │ 5       │
+│ 5       │ '467.674ms'  │ 'b+level 10-100'  │ '2'     │ '±4.14%' │ 5       │
+│ 6       │ '466.507ms'  │ 'b+level 20-100'  │ '2'     │ '±2.35%' │ 5       │
+│ 7       │ '474.350ms'  │ 'b+level 100-200' │ '2'     │ '±2.83%' │ 5       │
+│ 8       │ '491.414ms'  │ 'b+level 1-200'   │ '2'     │ '±2.57%' │ 5       │
+│ 9       │ '485.670ms'  │ 'b+level 10-200'  │ '2'     │ '±2.34%' │ 5       │
+│ 10      │ '490.234ms'  │ 'b+level 40-200'  │ '2'     │ '±6.45%' │ 5       │
+│ 11      │ '602.829ms'  │ 'b+level 200-400' │ '1'     │ '±4.48%' │ 4       │
+│ 12      │ '588.624ms'  │ 'b+level 10-400'  │ '1'     │ '±2.17%' │ 4       │
+│ 13      │ '837.142ms'  │ 'b+level 400-800' │ '1'     │ '±4.55%' │ 3       │
+└─────────┴──────────────┴───────────────────┴─────────┴──────────┴─────────┘
 
 
-HERE
+Seems like 1-40 is a the best. We'll use that size going forward.
+
+┌─────────┬──────────────┬─────────────────┬─────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name       │ ops/sec │ Margin   │ Samples │
+├─────────┼──────────────┼─────────────────┼─────────┼──────────┼─────────┤
+│ 0       │ '552.480ms'  │ 'b+level 4-9'   │ '1'     │ '±4.59%' │ 4       │
+│ 1       │ '454.746ms'  │ 'b+level 10-20' │ '2'     │ '±3.92%' │ 5       │
+│ 2       │ '439.856ms'  │ 'b+level 1-20'  │ '2'     │ '±3.65%' │ 5       │
+│ 3       │ '395.749ms'  │ 'b+level 20-40' │ '2'     │ '±3.90%' │ 6       │
+│ 4       │ '386.357ms'  │ 'b+level 1-40'  │ '2'     │ '±4.61%' │ 6       │
+│ 5       │ '425.084ms'  │ 'b+level 40-80' │ '2'     │ '±2.38%' │ 5       │
+│ 6       │ '435.143ms'  │ 'b+level 1-80'  │ '2'     │ '±5.92%' │ 5       │
+└─────────┴──────────────┴─────────────────┴─────────┴──────────┴─────────┘
+
+Now obviously using this b+tree is going to be slower than using SQLite or LevelDb directly. But the benefit of the b+ tree comes down the line from the reducer tree and the interval tree. The goal here is just to get some sense of it's performance and the relative trade-off.
+
+Looks like the b+ tree is 1/3x slower for SQLite and 5x slower for LevelDb for consecutive writes. However for batch writes, the performance degration is more marginal.
+
+Very relevant though is that SQlite is about 20x slower than LevelDb.
+
+┌─────────┬──────────────┬────────────────────────────────┬─────────┬───────────┬─────────┐
+│ (index) │ Average Time │ Task Name                      │ ops/sec │ Margin    │ Samples │
+├─────────┼──────────────┼────────────────────────────────┼─────────┼───────────┼─────────┤
+│ 0       │ '004.485ms'  │ 'insert 10_000 memory'         │ '222'   │ '±0.80%'  │ 446     │
+│ 1       │ '002.906s'   │ 'insert 10_000 sqlite'         │ '0'     │ '±19.72%' │ 2       │
+│ 2       │ '003.843s'   │ 'insert 10_000 b+sqlite'       │ '0'     │ '±1.70%'  │ 2       │
+│ 3       │ '119.468ms'  │ 'insert 10_000 level'          │ '8'     │ '±2.00%'  │ 17      │
+│ 4       │ '614.924ms'  │ 'insert 10_000 b+level'        │ '1'     │ '±5.15%'  │ 4       │
+│ 5       │ '015.546ms'  │ 'insert batch 10_000 sqlite'   │ '64'    │ '±0.45%'  │ 129     │
+│ 6       │ '017.458ms'  │ 'insert batch 10_000 b+sqlite' │ '57'    │ '±1.36%'  │ 115     │
+│ 7       │ '013.497ms'  │ 'insert batch 10_000 level'    │ '74'    │ '±0.36%'  │ 149     │
+│ 8       │ '017.038ms'  │ 'insert batch 10_000 b+level'  │ '58'    │ '±2.31%'  │ 118     │
+└─────────┴──────────────┴────────────────────────────────┴─────────┴───────────┴─────────┘
+
+Since we're usually dealing with a database already with some size, lets measure performance on a tree with 100k items already it.
+
+B+ consecutive deletes are 40x slower with SQLite, 8x slower with LevelDb. Reads are about 8x slower for both SQLite and LevelDb.
+
+┌─────────┬──────────────┬────────────────────────────────────────┬─────────┬───────────┬─────────┐
+│ (index) │ Average Time │ Task Name                              │ ops/sec │ Margin    │ Samples │
+├─────────┼──────────────┼────────────────────────────────────────┼─────────┼───────────┼─────────┤
+│ 0       │ '324.898ms'  │ 'insert 1000 more from 100k sqlite'    │ '3'     │ '±10.80%' │ 7       │
+│ 1       │ '408.879ms'  │ 'insert 1000 more from 100k b+ sqlite' │ '2'     │ '±1.85%'  │ 5       │
+│ 2       │ '013.178ms'  │ 'insert 1000 more from 100k level'     │ '75'    │ '±2.74%'  │ 153     │
+│ 3       │ '091.072ms'  │ 'insert 1000 more from 100k b+ level'  │ '10'    │ '±5.32%'  │ 22      │
+│ 4       │ '011.128ms'  │ 'delete 1000 more from 100k sqlite'    │ '89'    │ '±27.60%' │ 180     │
+│ 5       │ '403.024ms'  │ 'delete 1000 more from 100k b+ sqlite' │ '2'     │ '±4.86%'  │ 5       │
+│ 6       │ '011.059ms'  │ 'delete 1000 more from 100k level'     │ '90'    │ '±1.86%'  │ 182     │
+│ 7       │ '084.786ms'  │ 'delete 1000 more from 100k b+ level'  │ '11'    │ '±2.86%'  │ 24      │
+│ 8       │ '007.443ms'  │ 'read 1000 from 100k sqlite'           │ '134'   │ '±0.74%'  │ 269     │
+│ 9       │ '052.751ms'  │ 'read 1000 from 100k b+ sqlite'        │ '18'    │ '±1.10%'  │ 38      │
+│ 10      │ '007.628ms'  │ 'read 1000 from 100k level'            │ '131'   │ '±0.68%'  │ 263     │
+│ 11      │ '055.003ms'  │ 'read 1000 from 100k b+ level'         │ '18'    │ '±0.60%'  │ 37      │
+└─────────┴──────────────┴────────────────────────────────────────┴─────────┴───────────┴─────────┘
+
+Conclusions:
+- LevelDb is way faster at writes and SQLite. Deletes and reads are about the same.
+- B+ tree layer adds 1/2x (sqlite) - 8x (level) cost on consecutive writes.
+- B+ tree layer adds 8x (level) - 40x (sqlite) cost on consecutive deletes.
+- B+ tree layer ads about 8x cost on reads.
+
+If we stick with LevelDb, we can safely say "its about 8x slower".
+
+Idea: are there any cases where we're writing a node that hasn't actually changed?
+
+## Durable B+ Reducer Tree
 - btree-reducer-sync
 - btree-reducer-async
+
+## Durable B+ Interval Tree
 - itree-sync
 - itree-async
 
-Then Perf.
-- also just naive in-memory comparison.
-- sqlite vs reducer tree
-- sqlite vs interval tree
+## Performance Testing - Round 3
 
-prolly tree just for fun?
+- sqlite query vs reducer tree
+- sqlite query vs interval tree
 
-
+prolly tree just for fun? prolly not.
 
 - sqlite vs tuple bptree
 
-minisql
+minisql with tuple encoding on leveldb.
 - create table
 - create index on table
 - insert into table
 - select from index
 
-
 Demos...
 - Messaging app (Slack)
-
-	```
-	[channelId, {}]
-	[channelId, ]
-
-
 - Social network app (Twitter)
 - Contacts app  (Database)
 - Generalized Database
 - Filing Cabinets
-
-```ts
-
-const role = t.union(
-	t.literal("member"),
-	t.literal("admin")
-)
-
-const Channel = t.obj({
-	id: t.uuid,
-	name: t.string,
-	members: t.map(t.uuid, role)
-})
-
-const Message = t.obj({
-	id: t.uuid,
-	author_id: t.uuid,
-	channel_id: t.uuid,
-	created_at: t.date,
-	text: t.string
-})
-
-const MessagesIndex = {
-	label: ["channel_id", "message_created_at", "message_id"],
-	key: [t.uuid, t.date, t.uuid],
-	value: t.null
-}
-
-// Maybe we do want a table, index model...
-
-type Index = {
-	key: ["channel", ":id"],
-	value: {id: string, name: string}
-}
-
-type Index = {
-	key: ["channel", ":id"],
-	value: {id: string, name: string}
-}
-
-
-```
