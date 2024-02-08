@@ -313,19 +313,28 @@ I'm not sure latch crabbing is really that useful once we start having batch wri
 
 Starting from InMemoryBinaryPlusTree.
 
+in place mutation test.
+batch tests
+storage tests
+transaction helper
 
 
 
-// btree-lock -> btree-async with better types, jsonCodec, and list query.
+Performance...
+- bptree with sqlite vs bptree with leveldb vs sqlite vs leveldb
+- sqlite vs tuple bptree
 
-// btree-reducer-sync
-// btree-reducer-async
 
-// itree-sync
-// itree-async
+
+- btree-reducer-sync
+- btree-reducer-async
+- itree-sync
+- itree-async
+
+- sqlite vs reducer tree
+- sqlite vs interval tree
 
 prolly tree just for fun?
-
 
 
 Demos...
