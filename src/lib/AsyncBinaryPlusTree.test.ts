@@ -1,6 +1,7 @@
+import { TestClock } from "@ccorcos/test-clock"
 import { strict as assert } from "assert"
 import { jsonCodec } from "lexicodec"
-import { cloneDeep } from "lodash"
+import { cloneDeep, uniq } from "lodash"
 import { describe, it } from "mocha"
 import { AsyncBinaryPlusTree } from "./AsyncBinaryPlusTree"
 
@@ -202,12 +203,16 @@ const structuralTests24 = `
 export class AsyncKeyValueStorage {
 	map = new Map<string, any>()
 
+	constructor(private delay?: () => Promise<void>) {}
+
 	async get(key: string) {
+		await this.delay?.()
 		// console.log("GET", key, this.map.get(key))
 		return cloneDeep(this.map.get(key))
 	}
 
 	async write(tx: { set?: { key: string; value: any }[]; delete?: string[] }) {
+		await this.delay?.()
 		for (const { key, value } of tx.set || []) {
 			// console.log("SET", key, value)
 			this.map.set(key, cloneDeep(value))
@@ -219,14 +224,16 @@ export class AsyncKeyValueStorage {
 	}
 }
 
-describe("AsyncBinaryPlusTree", () => {
+describe("AsyncBinaryPlusTree", function () {
+	this.timeout(10_000)
+
 	describe("structural tests 2-4", async () => {
 		const storage = new AsyncKeyValueStorage()
 		const tree = new AsyncBinaryPlusTree(storage, 2, 4)
 		await test(tree, structuralTests24)
 	})
 
-	describe.only("property test 2-4 * 100", async () => {
+	describe("property test 2-4 * 100", async () => {
 		await propertyTest({ minSize: 2, maxSize: 4, testSize: 100 })
 	})
 
@@ -670,6 +677,69 @@ describe("AsyncBinaryPlusTree", () => {
 			}
 		})
 	})
+
+	it.only("concurreny reads and write", async () => {
+		const clock = new TestClock()
+
+		const sleep = (n: number) => clock.sleep(Math.random() * n)
+
+		const storage = new AsyncKeyValueStorage(() => sleep(5))
+		const tree = new AsyncBinaryPlusTree(storage, 3, 6)
+
+		const size = 5000
+		const numbers = randomNumbers(size)
+
+		const writeAll = () =>
+			Promise.all(
+				numbers.map(async (number, index) => {
+					await sleep(20)
+					// console.log(`SET Index ${index} Number ${number}`)
+					await tree.set(number, number)
+				})
+			)
+
+		const readAll = () =>
+			Promise.all(
+				numbers.map(async (number) => {
+					await sleep(20)
+					await tree.get(number)
+				})
+			)
+
+		const deleteSome = (modN: number) =>
+			Promise.all(
+				numbers.map(async (number, index) => {
+					if (index % modN !== 0) return
+					await sleep(20)
+					// console.log(`DELETE Index ${index} Number ${number}`)
+					await tree.delete(number)
+				})
+			)
+
+		const promises = [
+			writeAll(),
+			writeAll(),
+			writeAll(),
+			readAll(),
+			readAll(),
+			readAll(),
+			deleteSome(7),
+			deleteSome(5),
+			deleteSome(5),
+		]
+
+		await clock.run()
+		await Promise.all(promises)
+
+		await Promise.all(
+			numbers.map(async (number, index) => {
+				// console.log(`CHECK Index ${index} Number ${number}`)
+				if (index % 7 === 0 || index % 5 === 0) return
+				const result = await tree.get(number)
+				assert.equal(result, number, `Index ${index} Number ${number}`)
+			})
+		)
+	})
 })
 
 function randomNumbers(size: number, range?: [number, number]) {
@@ -677,7 +747,7 @@ function randomNumbers(size: number, range?: [number, number]) {
 	const numbers: number[] = []
 	for (let i = 0; i < size; i++)
 		numbers.push(Math.round(Math.random() * (range[1] - range[0]) - range[0]))
-	return numbers
+	return uniq(numbers)
 }
 
 function parseTests(str: string) {
@@ -709,7 +779,7 @@ async function test(tree: AsyncBinaryPlusTree, str: string) {
 		it(label, async () => {
 			if (test.op === "+") await tree.set(test.n, test.n.toString())
 			if (test.op === "-") await tree.delete(test.n)
-			assert.equal(await inspect(tree), test.tree, test.comment)
+			assert.equal(await inspect(tree.storage as any), test.tree, test.comment)
 
 			const value = test.op === "+" ? test.n.toString() : undefined
 			assert.equal(await tree.get(test.n), value, test.comment)
@@ -731,10 +801,11 @@ type KeyTree =
 	| { keys: Key[]; children: KeyTree[] }
 
 async function toKeyTree(
-	tree: AsyncBinaryPlusTree,
+	storage: AsyncKeyValueStorage,
 	id = "root"
 ): Promise<KeyTree> {
-	const node = await tree.storage.get(id)
+	const node = await storage.get(id)
+	if (!node && id === "root") return { keys: [], children: [] }
 	if (!node) throw new Error("Missing node!")
 
 	const keys = node.leaf
@@ -743,7 +814,7 @@ async function toKeyTree(
 
 	if (node.leaf) return { keys: keys }
 	const subtrees = await Promise.all(
-		node.children.map((v) => toKeyTree(tree, v.childId))
+		node.children.map((v) => toKeyTree(storage, v.childId))
 	)
 
 	return { keys: keys, children: subtrees }
@@ -776,8 +847,8 @@ function print(x: any) {
 	return ""
 }
 
-async function inspect(tree: AsyncBinaryPlusTree) {
-	const keyTree = await toKeyTree(tree)
+async function inspect(storage: AsyncKeyValueStorage) {
+	const keyTree = await toKeyTree(storage)
 	const layers = toTreeLayers(keyTree)
 	const str = layers
 		.map((layer) =>
@@ -792,7 +863,7 @@ async function verify(tree: AsyncBinaryPlusTree, id = "root") {
 	const node = await tree.storage.get(id)
 	if (id === "root") {
 		const storage = tree.storage as AsyncKeyValueStorage
-		assert.equal(await countNodes(tree), storage.map.size)
+		assert.equal(await countNodes(storage), storage.map.size)
 		if (!node) return
 		if (node.leaf) return
 		for (const { childId } of node.children) await verify(tree, childId)
@@ -802,20 +873,20 @@ async function verify(tree: AsyncBinaryPlusTree, id = "root") {
 	assert.ok(node)
 	const size = node.leaf ? node.values.length : node.children.length
 	assert.ok(size >= tree.minSize)
-	assert.ok(size <= tree.maxSize, await inspect(tree))
+	assert.ok(size <= tree.maxSize, await inspect(tree.storage as any))
 
 	if (node.leaf) return
 	for (const { childId } of node.children) verify(tree, childId)
 }
 
-async function countNodes(tree: AsyncBinaryPlusTree, id = "root") {
-	const node = await tree.storage.get(id)
+async function countNodes(storage: AsyncKeyValueStorage, id = "root") {
+	const node = await storage.get(id)
 	if (id === "root") {
 		if (!node) return 0
 		if (node.leaf) return 1
 		let count = 1
 		for (const { childId } of node.children)
-			count += await countNodes(tree, childId)
+			count += await countNodes(storage, childId)
 		return count
 	}
 
@@ -823,7 +894,7 @@ async function countNodes(tree: AsyncBinaryPlusTree, id = "root") {
 	if (node.leaf) return 1
 	let count = 1
 	for (const { childId } of node.children)
-		count += await countNodes(tree, childId)
+		count += await countNodes(storage, childId)
 	return count
 }
 

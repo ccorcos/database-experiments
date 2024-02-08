@@ -373,7 +373,7 @@ describe("AsyncBinaryPlusKeyValueDatabase", function () {
 			numbers.map(async (number, index) => {
 				if (index % 7 === 0 || index % 5 === 0) return
 				const result = await tree.get(number)
-				assert.equal(result, number)
+				assert.equal(result, number, `Index ${index} `)
 			})
 		)
 	})

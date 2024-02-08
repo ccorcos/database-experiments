@@ -55,12 +55,14 @@ export class ReadWriteTransaction<T>
 	deletes = new Set<string>()
 
 	set(key: string, value: T) {
+		// console.log("set:", key)
 		this.sets.set(key, value)
 		this.cache.set(key, value)
 		this.deletes.delete(key)
 	}
 
 	delete(key: string) {
+		// console.log("delete:", key)
 		this.cache.set(key, undefined)
 		this.sets.delete(key)
 		this.deletes.add(key)
@@ -150,7 +152,10 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 
 			// Closest key that is at least as big as the key...
 			// So the closest should never be less than the minKey.
-			if (result.closest === 0) throw new Error("Broken.")
+			if (result.closest === 0) {
+				console.log(node, key)
+				throw new Error("Broken.")
+			}
 
 			const childIndex =
 				result.found !== undefined ? result.found : result.closest - 1
@@ -575,6 +580,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 		while (node) {
 			const size = node.leaf ? node.values.length : node.children.length
 			if (size <= this.maxSize) break
+
 			const splitIndex = Math.round(size / 2)
 
 			if (node.leaf) {
@@ -606,7 +612,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				}
 
 				// Insert right node into parent.
-				const newNode = {
+				const newNode: LeafNode<K, V> = {
 					...node,
 					values: node.values.slice(0, splitIndex),
 				}
@@ -617,7 +623,10 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				if (!parent) throw new Error("Broken.")
 				if (parentIndex === undefined) throw new Error("Broken.")
 
-				const newParent = { ...parent, children: [...parent.children] }
+				const newParent: BranchNode<K> = {
+					...parent,
+					children: [...parent.children],
+				}
 				newParent.children.splice(parentIndex + 1, 0, {
 					minKey: rightMinKey,
 					childId: rightNode.id,
@@ -654,9 +663,9 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			}
 
 			// Insert right node into parent.
-			const newNode = {
+			const newNode: BranchNode<K> = {
 				...node,
-				values: node.children.slice(0, splitIndex),
+				children: node.children.slice(0, splitIndex),
 			}
 			tx.set(newNode.id, newNode)
 
@@ -665,7 +674,10 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			if (!parent) throw new Error("Broken.")
 			if (parentIndex === undefined) throw new Error("Broken.")
 
-			const newParent = { ...parent, children: [...parent.children] }
+			const newParent: BranchNode<K> = {
+				...parent,
+				children: [...parent.children],
+			}
 			newParent.children.splice(parentIndex + 1, 0, {
 				minKey: rightMinKey,
 				childId: rightNode.id,
@@ -674,6 +686,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 
 			// Recur
 			node = newParent
+			continue
 		}
 	}
 
@@ -691,7 +704,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			const node = nodePath[0]
 
 			if (node.leaf) {
-				const newNode = { ...node, values: [...node.values] }
+				const newNode: LeafNode<K, V> = { ...node, values: [...node.values] }
 				const exists = this.leafValues.remove(newNode.values, key)
 				tx.set(newNode.id, newNode)
 				if (!exists) return // No changes to the tree!
@@ -705,6 +718,7 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			const result = this.branchChildren.search(node.children, key)
 			const index =
 				result.found !== undefined ? result.found : result.closest - 1
+
 			const childId = node.children[index].childId
 			const child = await tx.get(childId)
 			if (!child) throw Error("Missing child node.")
@@ -752,10 +766,13 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				// No need to recursively update if the minKey didn't change.
 				if (this.compareBranchKey(parentItem.minKey, minKey) === 0) return
 				// Set the minKey and recur
-				const newParent = { ...parent, children: parent.children }
+				const newParent: BranchNode<K> = {
+					...parent,
+					children: [...parent.children],
+				}
 				newParent.children[parentIndex] = {
-					childId: parentItem.childId,
 					minKey: minKey,
+					childId: parentItem.childId,
 				}
 				tx.set(newParent.id, newParent)
 				node = newParent
@@ -775,30 +792,36 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 					if (combinedSize > this.maxSize) {
 						const splitIndex = Math.round(combinedSize / 2) - node.values.length
 
-						const newRight = {
+						const newRight: LeafNode<K, V> = {
 							...rightSibling,
 							values: [...rightSibling.values],
 						}
 						const moveLeft = newRight.values.splice(0, splitIndex)
 						tx.set(newRight.id, newRight)
 
-						const newNode = { ...node, values: [...node.values] }
+						const newNode: LeafNode<K, V> = {
+							...node,
+							values: [...node.values],
+						}
 						newNode.values.push(...moveLeft)
 						tx.set(newNode.id, newNode)
 
 						// Update parent minKey.
-						const newParent = { ...parent, children: [...parent.children] }
+						const newParent: BranchNode<K> = {
+							...parent,
+							children: [...parent.children],
+						}
 						if (newParent.children[parentIndex].minKey !== null) {
 							const leftMinKey = newNode.values[0].key
 							newParent.children[parentIndex] = {
 								minKey: leftMinKey,
-								childId: newParent.children[parentIndex].childId,
+								childId: newNode.id,
 							}
 						}
 						const rightMinKey = newRight.values[0].key
 						newParent.children[parentIndex + 1] = {
 							minKey: rightMinKey,
-							childId: newParent.children[parentIndex + 1].childId,
+							childId: newRight.id,
 						}
 						tx.set(newParent.id, newParent)
 
@@ -808,14 +831,17 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 					}
 
 					// Merge leaves.
-					const newRight = {
+					const newRight: LeafNode<K, V> = {
 						...rightSibling,
 						values: [...rightSibling.values],
 					}
 					newRight.values.unshift(...node.values)
 
 					// Remove the old pointer to rightSibling
-					const newParent = { ...parent, children: [...parent.children] }
+					const newParent: BranchNode<K> = {
+						...parent,
+						children: [...parent.children],
+					}
 					newParent.children.splice(1, 1)
 
 					// Replace the node pointer with the new rightSibling
@@ -844,17 +870,23 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				if (combinedSize > this.maxSize) {
 					const splitIndex = Math.round(combinedSize / 2)
 
-					const newLeft = { ...leftSibling, values: [...leftSibling.values] }
+					const newLeft: LeafNode<K, V> = {
+						...leftSibling,
+						values: [...leftSibling.values],
+					}
 					const moveRight = newLeft.values.splice(splitIndex, this.maxSize)
 
-					const newNode = { ...node, values: [...node.values] }
+					const newNode: LeafNode<K, V> = { ...node, values: [...node.values] }
 					newNode.values.unshift(...moveRight)
 
 					// Update parent keys.
-					const newParent = { ...parent, children: [...parent.children] }
+					const newParent: BranchNode<K> = {
+						...parent,
+						children: [...parent.children],
+					}
 					newParent.children[parentIndex] = {
 						minKey: newNode.values[0].key,
-						childId: newParent.children[parentIndex].childId,
+						childId: newNode.id,
 					}
 					tx.set(newLeft.id, newLeft)
 					tx.set(newNode.id, newNode)
@@ -866,12 +898,18 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				}
 
 				// Merge
-				const newLeft = { ...leftSibling, values: [...leftSibling.values] }
+				const newLeft: LeafNode<K, V> = {
+					...leftSibling,
+					values: [...leftSibling.values],
+				}
 				newLeft.values.push(...node.values)
 
 				// No need to update minKey because we added to the right.
 				// Just need to delete the old node.
-				const newParent = { ...parent, children: [...parent.children] }
+				const newParent: BranchNode<K> = {
+					...parent,
+					children: [...parent.children],
+				}
 				newParent.children.splice(parentIndex, 1)
 
 				tx.set(newLeft.id, newLeft)
@@ -895,30 +933,36 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				if (combinedSize > this.maxSize) {
 					const splitIndex = Math.round(combinedSize / 2) - node.children.length
 
-					const newRight = {
+					const newRight: BranchNode<K> = {
 						...rightSibling,
 						children: [...rightSibling.children],
 					}
 					const moveLeft = newRight.children.splice(0, splitIndex)
 					tx.set(newRight.id, newRight)
 
-					const newNode = { ...node, children: [...node.children] }
+					const newNode: BranchNode<K> = {
+						...node,
+						children: [...node.children],
+					}
 					newNode.children.push(...moveLeft)
 					tx.set(newNode.id, newNode)
 
 					// Update parent minKey.
-					const newParent = { ...parent, children: [...parent.children] }
+					const newParent: BranchNode<K> = {
+						...parent,
+						children: [...parent.children],
+					}
 					if (newParent.children[parentIndex].minKey !== null) {
 						const leftMinKey = newNode.children[0].minKey
 						newParent.children[parentIndex] = {
 							minKey: leftMinKey,
-							childId: newParent.children[parentIndex].childId,
+							childId: newNode.id,
 						}
 					}
-					const rightMinKey = rightSibling.children[0].minKey
+					const rightMinKey = newRight.children[0].minKey
 					newParent.children[parentIndex + 1] = {
 						minKey: rightMinKey,
-						childId: newParent.children[parentIndex + 1].childId,
+						childId: newRight.id,
 					}
 					tx.set(newParent.id, newParent)
 
@@ -928,14 +972,17 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				}
 
 				// Merge leaves.
-				const newRight = {
+				const newRight: BranchNode<K> = {
 					...rightSibling,
 					children: [...rightSibling.children],
 				}
 				newRight.children.unshift(...node.children)
 
 				// Remove the old pointer to rightSibling
-				const newParent = { ...parent, children: [...parent.children] }
+				const newParent: BranchNode<K> = {
+					...parent,
+					children: [...parent.children],
+				}
 				newParent.children.splice(1, 1)
 
 				// Replace the node pointer with the new rightSibling
@@ -960,21 +1007,27 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 
 			const combinedSize = leftSibling.children.length + node.children.length
 
-			// Redistribute leaf.
+			// Redistribute branch.
 			if (combinedSize > this.maxSize) {
 				const splitIndex = Math.round(combinedSize / 2)
 
-				const newLeft = { ...leftSibling, children: [...leftSibling.children] }
+				const newLeft: BranchNode<K> = {
+					...leftSibling,
+					children: [...leftSibling.children],
+				}
 				const moveRight = newLeft.children.splice(splitIndex, this.maxSize)
 
-				const newNode = { ...node, children: [...node.children] }
+				const newNode: BranchNode<K> = { ...node, children: [...node.children] }
 				newNode.children.unshift(...moveRight)
 
 				// Update parent keys.
-				const newParent = { ...parent, children: [...parent.children] }
+				const newParent: BranchNode<K> = {
+					...parent,
+					children: [...parent.children],
+				}
 				newParent.children[parentIndex] = {
 					minKey: newNode.children[0].minKey,
-					childId: newParent.children[parentIndex].childId,
+					childId: newNode.id,
 				}
 				tx.set(newLeft.id, newLeft)
 				tx.set(newNode.id, newNode)
@@ -986,12 +1039,18 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 			}
 
 			// Merge
-			const newLeft = { ...leftSibling, children: [...leftSibling.children] }
+			const newLeft: BranchNode<K> = {
+				...leftSibling,
+				children: [...leftSibling.children],
+			}
 			newLeft.children.push(...node.children)
 
 			// No need to update minKey because we added to the right.
 			// Just need to delete the old node.
-			const newParent = { ...parent, children: [...parent.children] }
+			const newParent: BranchNode<K> = {
+				...parent,
+				children: [...parent.children],
+			}
 			newParent.children.splice(parentIndex, 1)
 
 			tx.set(newLeft.id, newLeft)
