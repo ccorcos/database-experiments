@@ -313,7 +313,6 @@ I'm not sure latch crabbing is really that useful once we start having batch wri
 
 Starting from InMemoryBinaryPlusTree.
 
-in place mutation test.
 batch tests
 storage tests
 transaction helper

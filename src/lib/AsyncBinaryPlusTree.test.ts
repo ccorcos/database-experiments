@@ -246,16 +246,27 @@ describe("AsyncBinaryPlusTree", function () {
 		maxSize: number
 		testSize: number
 	}) {
-		const size = args.testSize
-		const numbers = randomNumbers(size)
+		const numbers = randomNumbers(args.testSize)
 
 		const storage = new AsyncKeyValueStorage()
 		const tree = new AsyncBinaryPlusTree(storage, args.minSize, args.maxSize)
-		for (let i = 0; i < size; i++) {
+
+		// Make sure we aren't in-place mutating any records.
+		const assertImmutable = async (fn: () => Promise<void>) => {
+			const references = new Map(storage.map)
+			const values = cloneDeep(references)
+			await fn()
+			assert.deepEqual(references, values)
+		}
+
+		for (let i = 0; i < numbers.length; i++) {
 			const n = numbers[i]
 			it(`Set ${i} : ${n}`, async () => {
 				// it(`+ ${n}`, () => {
-				await tree.set(n, n.toString())
+
+				await assertImmutable(async () => {
+					await tree.set(n, n.toString())
+				})
 				await verify(tree)
 
 				// Get works on every key so far.
@@ -271,7 +282,9 @@ describe("AsyncBinaryPlusTree", function () {
 
 					// it(`Overwrite ${j}: ${x}`, () => {
 					const t = cloneTree(tree)
-					await t.set(x, x * 2)
+					await assertImmutable(async () => {
+						await t.set(x, x * 2)
+					})
 					await verify(t)
 
 					// Check get on all keys.
@@ -289,7 +302,9 @@ describe("AsyncBinaryPlusTree", function () {
 
 					// it(`Delete ${j} : ${x}`, () => {
 					const t = cloneTree(tree)
-					await t.delete(x)
+					await assertImmutable(async () => {
+						await t.delete(x)
+					})
 					await verify(t)
 
 					// Check get on all keys.
@@ -678,7 +693,7 @@ describe("AsyncBinaryPlusTree", function () {
 		})
 	})
 
-	it.only("concurreny reads and write", async () => {
+	it("concurreny reads and write", async () => {
 		const clock = new TestClock()
 
 		const sleep = (n: number) => clock.sleep(Math.random() * n)
@@ -858,7 +873,7 @@ async function inspect(storage: AsyncKeyValueStorage) {
 	return str
 }
 
-/** Check for node sizes. */
+// Verify structure, node sizes, and make sure we're cleaning up.
 async function verify(tree: AsyncBinaryPlusTree, id = "root") {
 	const node = await tree.storage.get(id)
 	if (id === "root") {
