@@ -19,6 +19,7 @@
 	"license": "MIT",
 	"devDependencies": {
 		"@ccorcos/test-clock": "^0.0.4",
+		"@types/better-sqlite3": "^7.6.9",
 		"@types/lodash": "^4.14.202",
 		"@types/mocha": "whitecolor/mocha-types",
 		"@types/node": "^20.9.1",
@@ -30,6 +31,12 @@
 	"dependencies": {
 		"@ccorcos/lock": "^1.0.3",
 		"@ccorcos/ordered-array": "^0.0.4",
+		"abstract-leveldown": "^7.2.0",
+		"better-sqlite3": "^9.4.0",
+		"fake-indexeddb": "^5.0.2",
+		"fs-extra": "^11.2.0",
+		"idb": "^8.0.0",
+		"level": "^8.0.1",
 		"lexicodec": "^0.0.4",
 		"lodash": "^4.17.21",
 		"ulid": "^2.3.0"

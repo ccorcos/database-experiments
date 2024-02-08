@@ -313,8 +313,16 @@ I'm not sure latch crabbing is really that useful once we start having batch wri
 
 Starting from InMemoryBinaryPlusTree.
 
-batch tests
-storage tests
+storage tests implemeting AsyncKeyValueStorage
+- IndexedDbKeyValueStorage
+- JsonFileKeyValueStorage
+- LevelDbKeyValueStorage
+- SQLiteKeyValueStorage
+
+
+
+
+
 transaction helper
 
 
