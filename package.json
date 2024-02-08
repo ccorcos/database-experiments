@@ -12,7 +12,8 @@
 		"typecheck": "tsc --noEmit",
 		"test": "mocha -r tsx './src/**/*.test.ts' --verbose",
 		"release": "./release.sh",
-		"perf": "tsx src/performance.ts"
+		"perf": "tsx src/performance.ts",
+		"perf2": "tsx src/performance2.ts"
 	},
 	"keywords": [],
 	"author": "Chet Corcos <ccorcos@gmail.com>",

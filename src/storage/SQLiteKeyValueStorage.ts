@@ -1,7 +1,7 @@
 import { Database, Statement, Transaction } from "better-sqlite3"
 import { AsyncKeyValueStorage } from "../lib/AsyncBinaryPlusTree"
 
-export class SQLiteKeyValueStorage<V> implements AsyncKeyValueStorage<V> {
+export class SQLiteKeyValueStorage<V = any> implements AsyncKeyValueStorage<V> {
 	/**
 	 * import sqlite from "better-sqlite3"
 	 * new SQLiteKeyValueStorage(sqlite("path/to.db"))
@@ -39,7 +39,7 @@ export class SQLiteKeyValueStorage<V> implements AsyncKeyValueStorage<V> {
 	get = async (key: string) => {
 		return this.getQuery
 			.all({ key })
-			.map((row: any) => JSON.parse(row.value))[0]
+			.map((row: any) => JSON.parse(row.value))[0] as V | undefined
 	}
 
 	write = async (tx: {

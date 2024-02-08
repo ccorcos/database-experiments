@@ -311,37 +311,50 @@ Starting from bptree2.ts
 
 I'm not sure latch crabbing is really that useful once we start having batch writes and list reads. Probably better just to have a single read and write lock.
 
-Starting from InMemoryBinaryPlusTree.
+Starting from InMemoryBinaryPlusTree, made it async, added concurrency tests from `bptree-lock.test.ts`, and added immutability checks to make sure we aren't mutating anything.
 
-storage tests implemeting AsyncKeyValueStorage
-- IndexedDbKeyValueStorage
+## Storage
+
+Implemented 4 kinds of storage for `AsyncKeyValueStorage`. This is interface is much simpler than tuple storage because keys are strings and it just stores the tree nodes.
+
 - JsonFileKeyValueStorage
 - LevelDbKeyValueStorage
 - SQLiteKeyValueStorage
+- IndexedDbKeyValueStorage
 
+Wrote some simple property tests just to verify they work.
 
+## Performance Testing - Round 2
 
-
-
-transaction helper
-
-
+HERE
 
 Performance...
 - bptree with sqlite vs bptree with leveldb vs sqlite vs leveldb
-- sqlite vs tuple bptree
+	conclusion... b+ is slower, which make obvious sense. leveldb is 10x faster than sqlite.
 
 
-
+HERE
 - btree-reducer-sync
 - btree-reducer-async
 - itree-sync
 - itree-async
 
+Then Perf.
+- also just naive in-memory comparison.
 - sqlite vs reducer tree
 - sqlite vs interval tree
 
 prolly tree just for fun?
+
+
+
+- sqlite vs tuple bptree
+
+minisql
+- create table
+- create index on table
+- insert into table
+- select from index
 
 
 Demos...

@@ -2,7 +2,9 @@ import { AbstractBatch } from "abstract-leveldown"
 import { Level } from "level"
 import { AsyncKeyValueStorage } from "../lib/AsyncBinaryPlusTree"
 
-export class LevelDbKeyValueStorage<V> implements AsyncKeyValueStorage<V> {
+export class LevelDbKeyValueStorage<V = any>
+	implements AsyncKeyValueStorage<V>
+{
 	/**
 	 * import { Level } from "level"
 	 * new LevelDbKeyValueStorage(new Level("path/to.db"))
