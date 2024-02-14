@@ -429,7 +429,9 @@ If we stick with LevelDb, we can safely say "its about 8x slower".
 Idea: are there any cases where we're writing a node that hasn't actually changed?
 
 ## Durable B+ Reducer Tree
-- btree-reducer-sync
+
+HERE
+- `InMemoryBinaryPlusReducerTree.ts`
 - btree-reducer-async
 
 ## Durable B+ Interval Tree
@@ -441,11 +443,14 @@ Idea: are there any cases where we're writing a node that hasn't actually change
 - sqlite query vs reducer tree
 - sqlite query vs interval tree
 
+
+
+
 prolly tree just for fun? prolly not.
 
 - sqlite vs tuple bptree
 
-minisql with tuple encoding on leveldb.
+minisql with tuple encoding on leveldb... more like a filing cabinet. using data-type-ts for schema.
 - create table
 - create index on table
 - insert into table

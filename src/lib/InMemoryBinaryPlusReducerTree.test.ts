@@ -225,7 +225,7 @@ const combined = combineTreeReducers({
 	max: maxValue,
 })
 
-describe.only("InMemoryBinaryPlusReducerTree", () => {
+describe("InMemoryBinaryPlusReducerTree", () => {
 	describe("structural tests 2-4", () => {
 		const tree = new InMemoryBinaryPlusReducerTree(2, 4, count)
 		test(tree, structuralTests24)
