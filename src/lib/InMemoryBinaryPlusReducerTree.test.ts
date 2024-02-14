@@ -2,7 +2,7 @@ import { strict as assert } from "assert"
 import { jsonCodec } from "lexicodec"
 import { cloneDeep } from "lodash"
 import { describe, it } from "mocha"
-import { InMemoryBinaryPlusTree } from "./InMemoryBinaryPlusTree"
+import { InMemoryBinaryPlusReducerTree } from "./InMemoryBinaryPlusReducerTree"
 
 // min = 2, max = 4
 const structuralTests24 = `
@@ -199,9 +199,9 @@ const structuralTests24 = `
 
 `
 
-describe("InMemoryBinaryPlusTree", () => {
+describe("InMemoryBinaryPlusReducerTree", () => {
 	describe("structural tests 2-4", () => {
-		const tree = new InMemoryBinaryPlusTree(2, 4)
+		const tree = new InMemoryBinaryPlusReducerTree(2, 4)
 		test(tree, structuralTests24)
 	})
 
@@ -221,7 +221,7 @@ describe("InMemoryBinaryPlusTree", () => {
 		const size = args.testSize
 		const numbers = randomNumbers(size)
 
-		const tree = new InMemoryBinaryPlusTree(args.minSize, args.maxSize)
+		const tree = new InMemoryBinaryPlusReducerTree(args.minSize, args.maxSize)
 		for (let i = 0; i < size; i++) {
 			const n = numbers[i]
 			it(`Set ${i} : ${n}`, () => {
@@ -284,7 +284,7 @@ describe("InMemoryBinaryPlusTree", () => {
 
 	it("big tree", () => {
 		const numbers = randomNumbers(20_000)
-		const tree = new InMemoryBinaryPlusTree(3, 9)
+		const tree = new InMemoryBinaryPlusReducerTree(3, 9)
 		for (const number of numbers) {
 			tree.set(number, number * 2)
 			assert.equal(tree.get(number), number * 2)
@@ -297,7 +297,11 @@ describe("InMemoryBinaryPlusTree", () => {
 	})
 
 	it("tuple keys", () => {
-		const tree = new InMemoryBinaryPlusTree<any[], any>(3, 9, jsonCodec.compare)
+		const tree = new InMemoryBinaryPlusReducerTree<any[], any>(
+			3,
+			9,
+			jsonCodec.compare
+		)
 
 		const numbers = randomNumbers(2000)
 		for (const number of numbers) {
@@ -342,7 +346,7 @@ describe("InMemoryBinaryPlusTree", () => {
 				[8, 21],
 				[50, 100],
 			]) {
-				const tree = new InMemoryBinaryPlusTree(minSize, maxSize)
+				const tree = new InMemoryBinaryPlusReducerTree(minSize, maxSize)
 				for (const { key, value } of listEvens(0, 1998)()) tree.set(key, value)
 
 				const testList = listTest(tree, 0, 1998)
@@ -549,7 +553,7 @@ describe("InMemoryBinaryPlusTree", () => {
 		})
 
 		it("property tests", () => {
-			const tree = new InMemoryBinaryPlusTree(3, 9)
+			const tree = new InMemoryBinaryPlusReducerTree(3, 9)
 
 			const min = 0
 			const max = 400
@@ -590,7 +594,7 @@ describe("InMemoryBinaryPlusTree", () => {
 		})
 
 		it("smaller property tests", () => {
-			const tree = new InMemoryBinaryPlusTree(3, 9)
+			const tree = new InMemoryBinaryPlusReducerTree(3, 9)
 
 			const min = 0
 			const max = 100
@@ -671,8 +675,8 @@ function parseTests(str: string) {
 	})
 }
 
-function cloneTree<K, V>(tree: InMemoryBinaryPlusTree<K, V>) {
-	const cloned = new InMemoryBinaryPlusTree<K, V>(
+function cloneTree<K, V>(tree: InMemoryBinaryPlusReducerTree<K, V>) {
+	const cloned = new InMemoryBinaryPlusReducerTree<K, V>(
 		this.minSize,
 		this.maxSize,
 		this.compareKey
@@ -681,7 +685,7 @@ function cloneTree<K, V>(tree: InMemoryBinaryPlusTree<K, V>) {
 	return cloned
 }
 
-function treeDepth(tree: InMemoryBinaryPlusTree) {
+function treeDepth(tree: InMemoryBinaryPlusReducerTree) {
 	const root = tree.nodes.get("root")
 	if (!root) return 0
 	let depth = 1
@@ -695,7 +699,7 @@ function treeDepth(tree: InMemoryBinaryPlusTree) {
 	return depth
 }
 
-function test(tree: InMemoryBinaryPlusTree, str: string) {
+function test(tree: InMemoryBinaryPlusReducerTree, str: string) {
 	for (const test of parseTests(structuralTests24)) {
 		let label = `${test.op} ${test.n}`
 		if (test.comment) label += " // " + test.comment
@@ -719,7 +723,7 @@ type KeyTree =
 	| { keys: Key[]; children?: undefined }
 	| { keys: Key[]; children: KeyTree[] }
 
-function toKeyTree(tree: InMemoryBinaryPlusTree, id = "root"): KeyTree {
+function toKeyTree(tree: InMemoryBinaryPlusReducerTree, id = "root"): KeyTree {
 	const node = tree.nodes.get(id)
 	if (!node) throw new Error("Missing node!")
 
@@ -760,7 +764,7 @@ function print(x: any) {
 	return ""
 }
 
-function inspect(tree: InMemoryBinaryPlusTree) {
+function inspect(tree: InMemoryBinaryPlusReducerTree) {
 	const keyTree = toKeyTree(tree)
 	const layers = toTreeLayers(keyTree)
 	const str = layers
@@ -772,7 +776,7 @@ function inspect(tree: InMemoryBinaryPlusTree) {
 }
 
 /** Check for node sizes. */
-function verify(tree: InMemoryBinaryPlusTree, id = "root") {
+function verify(tree: InMemoryBinaryPlusReducerTree, id = "root") {
 	const node = tree.nodes.get(id)
 	if (id === "root") {
 		assert.equal(countNodes(tree), tree.nodes.size)
@@ -791,7 +795,7 @@ function verify(tree: InMemoryBinaryPlusTree, id = "root") {
 	for (const { childId } of node.children) verify(tree, childId)
 }
 
-function countNodes(tree: InMemoryBinaryPlusTree, id = "root") {
+function countNodes(tree: InMemoryBinaryPlusReducerTree, id = "root") {
 	const node = tree.nodes.get(id)
 	if (id === "root") {
 		if (!node) return 0

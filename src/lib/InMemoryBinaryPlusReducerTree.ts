@@ -23,7 +23,7 @@ type NodeCursor<K, V> = {
 	indexPath: number[]
 }
 
-export class InMemoryBinaryPlusTree<K = string | number, V = any> {
+export class InMemoryBinaryPlusReducerTree<K = string | number, V = any> {
 	nodes = new Map<string, BranchNode<K> | LeafNode<K, V>>()
 
 	/**
