@@ -523,7 +523,7 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 					data: rightNode.data,
 					childId: rightNode.id,
 				})
-				// Update parent count.
+				// Update parent data.
 				parent.children[parentIndex].data = node.data
 
 				// Recur
@@ -574,7 +574,7 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 				childId: rightNode.id,
 				data: rightNode.data,
 			})
-			// Update parent count.
+			// Update parent data.
 			parent.children[parentIndex].data = node.data
 
 			// Recur
@@ -648,10 +648,10 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 			const size = node.leaf ? node.values.length : node.children.length
 			const minKey = node.leaf ? node.values[0].key : node.children[0].minKey
 
-			let countUpdated = false
+			let dataUpdated = false
 			const parentCount = parent.children[parentIndex].data
 			if (parentCount !== node.data) {
-				countUpdated = true
+				dataUpdated = true
 				parent.children[parentIndex].data = node.data
 			}
 
@@ -670,7 +670,7 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 					parentItem.minKey = minKey
 				}
 
-				if (!minKeyUpdated && !countUpdated) {
+				if (!minKeyUpdated && !dataUpdated) {
 					return
 				}
 
@@ -706,7 +706,7 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 						const rightMinKey = rightSibling.values[0].key
 						parent.children[parentIndex + 1].minKey = rightMinKey
 
-						// Update parent count
+						// Update parent data
 						parent.children[parentIndex].data = node.data
 						parent.children[parentIndex + 1].data = rightSibling.data
 
@@ -726,7 +726,7 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 					const leftMost = parent.children[0].minKey === null
 					const minKey = leftMost ? null : node.values[0].key
 					parent.children[0].minKey = minKey
-					// Update parent count
+					// Update parent data
 					parent.children[0].data = node.data
 
 					// Recur
