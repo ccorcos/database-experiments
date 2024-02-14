@@ -1,6 +1,7 @@
+import { search } from "@ccorcos/ordered-array"
 import { strict as assert } from "assert"
 import { jsonCodec } from "lexicodec"
-import { cloneDeep, max, min, sum, uniqWith } from "lodash"
+import { cloneDeep, max, min, sample, sum, uniqWith } from "lodash"
 import { describe, it } from "mocha"
 import {
 	InMemoryBinaryPlusReducerTree,
@@ -244,7 +245,7 @@ describe.only("InMemoryBinaryPlusReducerTree", () => {
 		testSize: number
 	}) {
 		const size = args.testSize
-		const numbers = randomNumbers(size)
+		const numbers = randomInts(size)
 
 		const tree = new InMemoryBinaryPlusReducerTree(
 			args.minSize,
@@ -312,7 +313,7 @@ describe.only("InMemoryBinaryPlusReducerTree", () => {
 	}
 
 	it("big tree", () => {
-		const numbers = randomNumbers(20_000)
+		const numbers = randomInts(20_000)
 		const tree = new InMemoryBinaryPlusReducerTree(3, 9, count)
 		for (const number of numbers) {
 			tree.set(number, number * 2)
@@ -333,7 +334,7 @@ describe.only("InMemoryBinaryPlusReducerTree", () => {
 			jsonCodec.compare
 		)
 
-		const numbers = randomNumbers(2000)
+		const numbers = randomInts(2000)
 		for (const number of numbers) {
 			tree.set(["user", number], { id: number })
 			tree.set(["profile", number], number)
@@ -674,99 +675,207 @@ describe.only("InMemoryBinaryPlusReducerTree", () => {
 		})
 	})
 
-	describe("reduce", () => {
-		it("count", function () {
-			this.timeout(20_000)
-			const numbers = Array(1000)
-				.fill(0)
-				.map((x, i) => i * 2)
-			const tree = new InMemoryBinaryPlusReducerTree(3, 9, count)
-			for (const number of numbers) {
-				tree.set(number, number)
-				verifyCount(tree)
+	describe("reduce", function () {
+		this.timeout(20_000)
+
+		const reduceTest =
+			(tree: InMemoryBinaryPlusReducerTree, min: number, max: number) =>
+			(
+				args: {
+					gt?: number
+					gte?: number
+					lt?: number
+					lte?: number
+				} = {}
+			) => {
+				assert.deepEqual(
+					tree.reduce(args),
+					listEvens(min, max)(args).length,
+					JSON.stringify(args)
+				)
 			}
 
-			// Entire thing
-			assert.deepEqual(tree.reduce({}), numbers.length)
+		// Similar to list tests.
+		it("manual tests", () => {
+			// Test a few different tree sizes.
+			for (const [minSize, maxSize] of [
+				[3, 9],
+				[8, 21],
+				[50, 100],
+			]) {
+				const tree = new InMemoryBinaryPlusReducerTree(minSize, maxSize, count)
+				for (const { key, value } of listEvens(0, 1998)()) tree.set(key, value)
 
-			// No start bound
-			assert.deepEqual(
-				tree.reduce({ lt: 9 }),
-				[
-					{ key: 0, value: 0 },
-					{ key: 2, value: 2 },
-					{ key: 4, value: 4 },
-					{ key: 6, value: 6 },
-					{ key: 8, value: 8 },
-				].length
-			)
+				const testReduce = reduceTest(tree, 0, 1998)
 
-			// Within the same branch.
-			assert.deepEqual(
-				tree.reduce({ gte: 3, lt: 9 }),
-				[
-					{ key: 4, value: 4 },
-					{ key: 6, value: 6 },
-					{ key: 8, value: 8 },
-				].length
-			)
+				// Entire thing
+				testReduce()
 
-			assert.deepEqual(
-				tree.reduce({ gte: 4, lt: 10 }),
-				[
-					{ key: 4, value: 4 },
-					{ key: 6, value: 6 },
-					{ key: 8, value: 8 },
-				].length
-			)
+				// Less than odd.
+				testReduce({ lt: 9 })
+				testReduce({ lt: 199 })
 
-			// Across branches.
-			assert.deepEqual(
-				tree.reduce({ gte: 4, lt: 24 }),
-				[
-					{ key: 4, value: 4 },
-					{ key: 6, value: 6 },
-					{ key: 8, value: 8 },
-					{ key: 10, value: 10 },
-					{ key: 12, value: 12 },
-					{ key: 14, value: 14 },
-					{ key: 16, value: 16 },
-					{ key: 18, value: 18 },
-					{ key: 20, value: 20 },
-					{ key: 22, value: 22 },
-				].length
-			)
+				// Less than open bound.
+				testReduce({ lt: 10 })
+				testReduce({ lt: 200 })
 
-			// No end bound.
-			assert.deepEqual(
-				tree.reduce({ gte: 2000 - 4 }),
-				[
-					{ key: 1996, value: 1996 },
-					{ key: 1998, value: 1998 },
-				].length
-			)
+				// Less than odd closed bound.
+				testReduce({ lte: 9 })
+				testReduce({ lte: 199 })
+
+				// Less than closed bound.
+				testReduce({ lte: 10 })
+				testReduce({ lte: 200 })
+
+				// Less than left bound.
+				testReduce({ lt: -1 })
+				testReduce({ lte: -1 })
+
+				// Less than right bound
+				testReduce({ lt: 5000 })
+				testReduce({ lte: 5000 })
+
+				// Greater than odd.
+				testReduce({ gt: 1989 })
+				testReduce({ gt: 1781 })
+
+				// Greater than open bound.
+				testReduce({ gt: 1988 })
+				testReduce({ gt: 1780 })
+
+				// Greater than odd closed bound
+				testReduce({ gte: 1989 })
+				testReduce({ gte: 1781 })
+
+				// Greater than closed bound.
+				testReduce({ gte: 1988 })
+				testReduce({ gte: 1780 })
+
+				// Greater than left bound.
+				testReduce({ gt: -1 })
+				testReduce({ gte: -1 })
+
+				// Greater than right bound
+				testReduce({ gt: 5000 })
+				testReduce({ gte: 5000 })
+
+				// Within the same leaf
+				testReduce({ gt: 2, lt: 8 })
+				testReduce({ gte: 2, lt: 8 })
+				testReduce({ gt: 2, lte: 8 })
+				testReduce({ gte: 2, lte: 8 })
+
+				testReduce({ gt: 204, lt: 208 })
+				testReduce({ gte: 204, lt: 208 })
+				testReduce({ gt: 204, lte: 208 })
+				testReduce({ gte: 204, lte: 208 })
+
+				testReduce({ gt: 206, lt: 210 })
+				testReduce({ gte: 206, lt: 210 })
+				testReduce({ gt: 206, lte: 210 })
+				testReduce({ gte: 206, lte: 210 })
+
+				testReduce({ gt: 210, lt: 214 })
+				testReduce({ gte: 210, lt: 214 })
+				testReduce({ gt: 210, lte: 214 })
+				testReduce({ gte: 210, lte: 214 })
+
+				// Within different leaves
+				testReduce({ gt: 200, lt: 800 })
+				testReduce({ gte: 200, lt: 800 })
+				testReduce({ gt: 200, lte: 800 })
+				testReduce({ gte: 200, lte: 800 })
+
+				testReduce({ gt: 204, lt: 808 })
+				testReduce({ gte: 204, lt: 808 })
+				testReduce({ gt: 204, lte: 808 })
+				testReduce({ gte: 204, lte: 808 })
+
+				// Bounds conditions
+				testReduce({ gt: -100, lt: 100 })
+				testReduce({ gte: -100, lt: 100 })
+				testReduce({ gt: -100, lte: 100 })
+				testReduce({ gte: -100, lte: 100 })
+
+				testReduce({ gt: 1900, lt: 2100 })
+				testReduce({ gte: 1900, lt: 2100 })
+				testReduce({ gt: 1900, lte: 2100 })
+				testReduce({ gte: 1900, lte: 2100 })
+
+				testReduce({ gt: -100, lt: 2100 })
+				testReduce({ gte: -100, lt: 2100 })
+				testReduce({ gt: -100, lte: 2100 })
+				testReduce({ gte: -100, lte: 2100 })
+
+				// Random challenges from property test.
+				testReduce({ gt: -91, lt: 0 })
+				testReduce({ gt: 2, lt: 3 })
+			}
 		})
 
-		it("aggregation property test", () => {
-			const randomTuples = (
-				n: number,
-				len: number,
-				range: [number, number] = [-10, 10]
-			) =>
-				Array(n)
-					.fill(0)
-					.map(() => randomNumbers(len, range))
+		it("property tests", () => {
+			const tree = new InMemoryBinaryPlusReducerTree(3, 9, count)
 
-			let tuples = [
-				...randomTuples(10, 1),
-				...randomTuples(50, 2),
-				...randomTuples(100, 3),
-				...randomTuples(500, 4),
-				...randomTuples(1000, 5),
-			]
+			const min = 0
+			const max = 400
+			const delta = 20
+
+			for (const { key, value } of listEvens(min, max)()) tree.set(key, value)
+
+			const testReduce = reduceTest(tree, min, max)
+
+			for (let start = -min - delta; start < max + delta; start += 3) {
+				for (let end = start + 1; end < max + delta; end += 5) {
+					testReduce({ gt: start, lt: end })
+					testReduce({ gte: start, lt: end })
+					testReduce({ gt: start, lte: end })
+					testReduce({ gte: start, lte: end })
+				}
+			}
+		})
+
+		it("smaller property tests", () => {
+			const tree = new InMemoryBinaryPlusReducerTree(3, 9, count)
+
+			const min = 0
+			const max = 100
+			const delta = 10
+
+			for (const { key, value } of listEvens(min, max)()) tree.set(key, value)
+
+			const testReduce = reduceTest(tree, min, max)
+
+			for (let start = -min - delta; start < max + delta; start += 1) {
+				for (let end = start; end < max + delta; end += 1) {
+					if (start !== end) {
+						testReduce({ gt: start, lt: end })
+						testReduce({ gte: start, lt: end })
+						testReduce({ gt: start, lte: end })
+					}
+					testReduce({ gte: start, lte: end })
+				}
+			}
+		})
+
+		it("combined reducer tuple property test", () => {
+			const randomIntTuple = (range: [number, number]) => {
+				const size = Math.ceil(randomNumber([1, 6]))
+				return randomInts(size, range)
+			}
+			const randomDecimalTuple = (range: [number, number]) => {
+				const size = Math.floor(randomNumber([1, 6]))
+				return randomNumbers(size, range)
+			}
+
+			const bound = [-10, 10] as [number, number]
+			const doubleBound = [-20, 20] as [number, number]
+
+			// Make 2000 random integer tuples of varying length.
+			let tuples = Array(2000)
+				.fill(0)
+				.map(() => randomIntTuple(bound))
 
 			tuples = uniqWith(tuples, (a, b) => jsonCodec.compare(a, b) === 0)
-			tuples.sort(jsonCodec.compare)
 
 			const tree = new InMemoryBinaryPlusReducerTree(
 				3,
@@ -774,44 +883,151 @@ describe.only("InMemoryBinaryPlusReducerTree", () => {
 				combined,
 				jsonCodec.compare
 			)
-			for (const tuple of tuples) {
-				tree.set(tuple, sum(tuple))
+
+			// Value is the sum of the tuple components.
+			for (const tuple of tuples) tree.set(tuple, sum(tuple))
+
+			// Construct 2000 random ranges.
+			let ranges = Array(2000)
+				.fill(0)
+				.map(
+					() =>
+						[
+							randomDecimalTuple(doubleBound),
+							randomDecimalTuple(doubleBound),
+						] as [number[], number[]]
+				)
+
+			// Create ranges samples from the original tuple.a
+			for (let i = 0; i < 2000; i++)
+				ranges.push([sample(tuples), sample(tuples)] as [number[], number[]])
+
+			// Sort the ranges properly
+			ranges = ranges.map((range) => {
+				range.sort(jsonCodec.compare)
+				return range
+			})
+
+			// Ignore ranges where start and end are the same.
+			ranges = ranges.filter(([a, b]) => jsonCodec.compare(a, b) !== 0)
+
+			tuples.sort(jsonCodec.compare)
+
+			const answer = (
+				args: {
+					gt?: number[]
+					gte?: number[]
+					lt?: number[]
+					lte?: number[]
+				} = {}
+			) => {
+				let startIndex = 0
+				if (args.gt !== undefined) {
+					const result = search(
+						tuples,
+						args.gt,
+						(key) => key,
+						jsonCodec.compare
+					)
+					if (result.found !== undefined) {
+						startIndex = result.found + 1
+					} else {
+						startIndex = result.closest
+					}
+				}
+				if (args.gte !== undefined) {
+					const result = search(
+						tuples,
+						args.gte,
+						(key) => key,
+						jsonCodec.compare
+					)
+					if (result.found !== undefined) {
+						startIndex = result.found
+					} else {
+						startIndex = result.closest
+					}
+				}
+
+				let endIndex = tuples.length
+				if (args.lt !== undefined) {
+					const result = search(
+						tuples,
+						args.lt,
+						(key) => key,
+						jsonCodec.compare
+					)
+					if (result.found !== undefined) {
+						endIndex = result.found
+					} else {
+						endIndex = result.closest
+					}
+				}
+				if (args.lte !== undefined) {
+					const result = search(
+						tuples,
+						args.lte,
+						(key) => key,
+						jsonCodec.compare
+					)
+					if (result.found !== undefined) {
+						endIndex = result.found + 1
+					} else {
+						endIndex = result.closest
+					}
+				}
+
+				const results = tuples.slice(startIndex, endIndex)
+
+				const values = results.map((t) => sum(t))
+				const data = {
+					count: results.length,
+					min: min(values),
+					max: max(values),
+				}
+
+				return data
 			}
 
-			const ranges = randomTuples(10_000, 2, [0, tuples.length - 1])
-				.map((range) => {
-					range.sort(jsonCodec.compare)
-					return range
-				})
-				// Ignore ranges where start and end are the same.
-				.filter(([a, b]) => a !== b)
-
-			for (const tuple of tuples) {
-				const result = tree.get(tuple)
-				assert.deepEqual(result, sum(tuple))
+			const testReduce = (
+				args: {
+					gt?: number[]
+					gte?: number[]
+					lt?: number[]
+					lte?: number[]
+				} = {}
+			) => {
+				assert.deepEqual(tree.reduce(args), answer(args))
 			}
 
-			for (const range of ranges) {
-				const gte = tuples[range[0]]
-				const lt = tuples[range[1]]
-				const result = tree.reduce({ gte, lt })
-				const slice = tuples.slice(range[0], range[1])
-				assert.deepEqual(result, {
-					count: slice.length,
-					min: min(slice.map((t) => sum(t))), // Value is the sum of the tuple
-					max: max(slice.map((t) => sum(t))),
-				})
+			testReduce()
+			for (const [start, end] of ranges) {
+				testReduce({ gt: start })
+				testReduce({ gte: start })
+				testReduce({ lt: start })
+				testReduce({ lte: start })
+				testReduce({ gt: start, lt: end })
+				testReduce({ gt: start, lte: end })
+				testReduce({ gte: start, lt: end })
+				testReduce({ gte: start, lte: end })
 			}
 		})
 	})
 })
 
+function randomNumber(range: [number, number]) {
+	return Math.random() * (range[1] - range[0]) + range[0]
+}
+
 function randomNumbers(size: number, range?: [number, number]) {
 	if (!range) range = [-size * 10, size * 10]
 	const numbers: number[] = []
-	for (let i = 0; i < size; i++)
-		numbers.push(Math.round(Math.random() * (range[1] - range[0]) - range[0]))
+	for (let i = 0; i < size; i++) numbers.push(randomNumber(range))
 	return numbers
+}
+
+function randomInts(size: number, range?: [number, number]) {
+	return randomNumbers(size, range).map((n) => Math.round(n))
 }
 
 function parseTests(str: string) {

@@ -519,7 +519,7 @@ export class InMemoryBinaryPlusReducerTree<
 		if (startLeaf.id === endLeaf.id) {
 			let startIndex = 0
 			let endIndex = endLeaf.values.length
-			if (start) {
+			if (start !== undefined) {
 				const result = this.leafValues.search(startLeaf.values, start)
 				if (result.found !== undefined) {
 					startIndex = result.found + (startOpen ? 1 : 0)
@@ -527,7 +527,7 @@ export class InMemoryBinaryPlusReducerTree<
 					startIndex = result.closest
 				}
 			}
-			if (end) {
+			if (end !== undefined) {
 				const result = this.leafValues.search(endLeaf.values, end)
 				if (result.found !== undefined) {
 					endIndex = result.found + (endOpen ? 0 : 1)
@@ -542,7 +542,7 @@ export class InMemoryBinaryPlusReducerTree<
 		}
 
 		let startData: D
-		if (start) {
+		if (start !== undefined) {
 			const result = this.leafValues.search(startLeaf.values, start)
 
 			let startIndex: number
@@ -559,7 +559,7 @@ export class InMemoryBinaryPlusReducerTree<
 		}
 
 		let endData: D
-		if (end) {
+		if (end !== undefined) {
 			const result = this.leafValues.search(endLeaf.values, end)
 
 			let endIndex: number

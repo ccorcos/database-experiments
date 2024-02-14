@@ -365,12 +365,12 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 		if (startLeaf.id === endLeaf.id) {
 			let startIndex = 0
 			let endIndex = endLeaf.values.length
-			if (args.start) {
+			if (args.start !== undefined) {
 				const result = this.leafValues.search(startLeaf.values, args.start)
 				const index = result.found !== undefined ? result.found : result.closest
 				startIndex = index
 			}
-			if (args.end) {
+			if (args.end !== undefined) {
 				const result = this.leafValues.search(endLeaf.values, args.end)
 				const index = result.found !== undefined ? result.found : result.closest
 				endIndex = index
@@ -382,7 +382,7 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 		}
 
 		let startData: D
-		if (args.start) {
+		if (args.start !== undefined) {
 			const result = this.leafValues.search(startLeaf.values, args.start)
 			const index = result.found !== undefined ? result.found : result.closest
 			const startValues = startLeaf.values.slice(index)
@@ -392,7 +392,7 @@ export class BinaryPlusReducerTree<K = string | number, V = any, D = any> {
 		}
 
 		let endData: D
-		if (args.end) {
+		if (args.end !== undefined) {
 			const result = this.leafValues.search(endLeaf.values, args.end)
 			const index = result.found !== undefined ? result.found : result.closest
 			const endValues = endLeaf.values.slice(0, index)
