@@ -1,6 +1,6 @@
 import { strict as assert } from "assert"
 import { jsonCodec } from "lexicodec"
-import { cloneDeep, max, min, sum } from "lodash"
+import { cloneDeep, max, min, sum, uniqWith } from "lodash"
 import { describe, it } from "mocha"
 import {
 	InMemoryBinaryPlusReducerTree,
@@ -673,6 +673,137 @@ describe.only("InMemoryBinaryPlusReducerTree", () => {
 			}
 		})
 	})
+
+	describe("reduce", () => {
+		it("count", function () {
+			this.timeout(20_000)
+			const numbers = Array(1000)
+				.fill(0)
+				.map((x, i) => i * 2)
+			const tree = new InMemoryBinaryPlusReducerTree(3, 9, count)
+			for (const number of numbers) {
+				tree.set(number, number)
+				verifyCount(tree)
+			}
+
+			// Entire thing
+			assert.deepEqual(tree.reduce({}), numbers.length)
+
+			// No start bound
+			assert.deepEqual(
+				tree.reduce({ lt: 9 }),
+				[
+					{ key: 0, value: 0 },
+					{ key: 2, value: 2 },
+					{ key: 4, value: 4 },
+					{ key: 6, value: 6 },
+					{ key: 8, value: 8 },
+				].length
+			)
+
+			// Within the same branch.
+			assert.deepEqual(
+				tree.reduce({ gte: 3, lt: 9 }),
+				[
+					{ key: 4, value: 4 },
+					{ key: 6, value: 6 },
+					{ key: 8, value: 8 },
+				].length
+			)
+
+			assert.deepEqual(
+				tree.reduce({ gte: 4, lt: 10 }),
+				[
+					{ key: 4, value: 4 },
+					{ key: 6, value: 6 },
+					{ key: 8, value: 8 },
+				].length
+			)
+
+			// Across branches.
+			assert.deepEqual(
+				tree.reduce({ gte: 4, lt: 24 }),
+				[
+					{ key: 4, value: 4 },
+					{ key: 6, value: 6 },
+					{ key: 8, value: 8 },
+					{ key: 10, value: 10 },
+					{ key: 12, value: 12 },
+					{ key: 14, value: 14 },
+					{ key: 16, value: 16 },
+					{ key: 18, value: 18 },
+					{ key: 20, value: 20 },
+					{ key: 22, value: 22 },
+				].length
+			)
+
+			// No end bound.
+			assert.deepEqual(
+				tree.reduce({ gte: 2000 - 4 }),
+				[
+					{ key: 1996, value: 1996 },
+					{ key: 1998, value: 1998 },
+				].length
+			)
+		})
+
+		it("aggregation property test", () => {
+			const randomTuples = (
+				n: number,
+				len: number,
+				range: [number, number] = [-10, 10]
+			) =>
+				Array(n)
+					.fill(0)
+					.map(() => randomNumbers(len, range))
+
+			let tuples = [
+				...randomTuples(10, 1),
+				...randomTuples(50, 2),
+				...randomTuples(100, 3),
+				...randomTuples(500, 4),
+				...randomTuples(1000, 5),
+			]
+
+			tuples = uniqWith(tuples, (a, b) => jsonCodec.compare(a, b) === 0)
+			tuples.sort(jsonCodec.compare)
+
+			const tree = new InMemoryBinaryPlusReducerTree(
+				3,
+				9,
+				combined,
+				jsonCodec.compare
+			)
+			for (const tuple of tuples) {
+				tree.set(tuple, sum(tuple))
+			}
+
+			const ranges = randomTuples(10_000, 2, [0, tuples.length - 1])
+				.map((range) => {
+					range.sort(jsonCodec.compare)
+					return range
+				})
+				// Ignore ranges where start and end are the same.
+				.filter(([a, b]) => a !== b)
+
+			for (const tuple of tuples) {
+				const result = tree.get(tuple)
+				assert.deepEqual(result, sum(tuple))
+			}
+
+			for (const range of ranges) {
+				const gte = tuples[range[0]]
+				const lt = tuples[range[1]]
+				const result = tree.reduce({ gte, lt })
+				const slice = tuples.slice(range[0], range[1])
+				assert.deepEqual(result, {
+					count: slice.length,
+					min: min(slice.map((t) => sum(t))), // Value is the sum of the tuple
+					max: max(slice.map((t) => sum(t))),
+				})
+			}
+		})
+	})
 })
 
 function randomNumbers(size: number, range?: [number, number]) {
@@ -824,6 +955,42 @@ function verify(tree: InMemoryBinaryPlusReducerTree, id = "root") {
 
 	if (node.leaf) return
 	for (const { childId } of node.children) verify(tree, childId)
+}
+
+/** Check for node sizes. */
+function verifyCount(
+	tree: InMemoryBinaryPlusReducerTree<any, any, number>,
+	id = "root"
+): number {
+	const node = tree.nodes.get(id)
+	if (!node) return 0
+
+	if (node.leaf) {
+		assert.equal(node.data, node.values.length, "leaf count")
+		return node.data
+	}
+
+	let branchCount = 0
+	for (const child of node.children) {
+		const childCount = verifyCount(tree, child.childId)
+		assert.equal(
+			child.data,
+			childCount,
+			[
+				"child count",
+				"minKeys",
+				JSON.stringify(node.children.map((child) => child.minKey)),
+				"item.data",
+				child.data,
+				"node count",
+				childCount,
+				"tree",
+				inspect(tree),
+			].join("\n")
+		)
+		branchCount += child.data
+	}
+	return branchCount
 }
 
 function countNodes(tree: InMemoryBinaryPlusReducerTree, id = "root") {
