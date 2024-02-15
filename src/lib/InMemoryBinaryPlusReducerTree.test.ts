@@ -209,6 +209,11 @@ const count: TreeReducer<any, any, number> = {
 	branch: (children) => sum(children.map((child) => child.data)),
 }
 
+const sumReducer: TreeReducer<any, any, number> = {
+	leaf: (values) => sum(values.map((x) => x.value)),
+	branch: (children) => sum(children.map((child) => child.data)),
+}
+
 const maxValue: TreeReducer<any, number, number> = {
 	leaf: (values) => max(values.map((v) => v.value))!,
 	branch: (children) => max(children.map((child) => child.data))!,
@@ -678,7 +683,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 	describe("reduce", function () {
 		this.timeout(20_000)
 
-		const reduceTest =
+		const countTest =
 			(tree: InMemoryBinaryPlusReducerTree, min: number, max: number) =>
 			(
 				args: {
@@ -706,7 +711,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 				const tree = new InMemoryBinaryPlusReducerTree(minSize, maxSize, count)
 				for (const { key, value } of listEvens(0, 1998)()) tree.set(key, value)
 
-				const testReduce = reduceTest(tree, 0, 1998)
+				const testReduce = countTest(tree, 0, 1998)
 
 				// Entire thing
 				testReduce()
@@ -822,7 +827,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 
 			for (const { key, value } of listEvens(min, max)()) tree.set(key, value)
 
-			const testReduce = reduceTest(tree, min, max)
+			const testReduce = countTest(tree, min, max)
 
 			for (let start = -min - delta; start < max + delta; start += 3) {
 				for (let end = start + 1; end < max + delta; end += 5) {
@@ -830,6 +835,68 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 					testReduce({ gte: start, lt: end })
 					testReduce({ gt: start, lte: end })
 					testReduce({ gte: start, lte: end })
+				}
+			}
+		})
+
+		it("sum test", () => {
+			const tree = new InMemoryBinaryPlusReducerTree(3, 9, sumReducer)
+
+			const min = 0
+			const max = 400
+			const delta = 20
+
+			const items = listEvens(min, max)
+			for (const { key, value } of items()) tree.set(key, value)
+
+			const sumTest1 = (
+				args: {
+					gt?: number
+					gte?: number
+					lt?: number
+					lte?: number
+				} = {}
+			) => {
+				assert.deepEqual(
+					tree.reduce(args),
+					sum(items(args).map((x) => x.value))
+					// JSON.stringify(args)
+				)
+			}
+
+			for (let start = -min - delta; start < max + delta; start += 3) {
+				for (let end = start + 1; end < max + delta; end += 5) {
+					sumTest1({ gt: start, lt: end })
+					sumTest1({ gte: start, lt: end })
+					sumTest1({ gt: start, lte: end })
+					sumTest1({ gte: start, lte: end })
+				}
+			}
+
+			const sumTest2 = (
+				args: {
+					gt?: number
+					gte?: number
+					lt?: number
+					lte?: number
+				} = {}
+			) => {
+				assert.deepEqual(
+					tree.reduce(args),
+					sum(items(args).map((x) => x.value)) * 2,
+					JSON.stringify(args)
+				)
+			}
+
+			// Double every value.
+			for (const { key, value } of items()) tree.set(key, value * 2)
+
+			for (let start = -min - delta; start < max + delta; start += 3) {
+				for (let end = start + 1; end < max + delta; end += 5) {
+					sumTest2({ gt: start, lt: end })
+					sumTest2({ gte: start, lt: end })
+					sumTest2({ gt: start, lte: end })
+					sumTest2({ gte: start, lte: end })
 				}
 			}
 		})
@@ -843,7 +910,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 
 			for (const { key, value } of listEvens(min, max)()) tree.set(key, value)
 
-			const testReduce = reduceTest(tree, min, max)
+			const testReduce = countTest(tree, min, max)
 
 			for (let start = -min - delta; start < max + delta; start += 1) {
 				for (let end = start; end < max + delta; end += 1) {

@@ -623,9 +623,7 @@ export class InMemoryBinaryPlusReducerTree<
 
 		// Insert into leaf node.
 		const leaf = nodePath[0] as LeafNode<K, V, D>
-		const existing = this.leafValues.insert(leaf.values, { key, value })
-		// No need to rebalance if we're replacing an existing item.
-		if (existing) return
+		this.leafValues.insert(leaf.values, { key, value })
 
 		// Balance the tree by splitting nodes, starting from the leaf.
 		let node = nodePath.shift()
