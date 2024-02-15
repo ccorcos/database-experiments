@@ -26,7 +26,7 @@ async function propertyTest(storage: AsyncKeyValueStorage) {
 	}
 }
 
-describe.only("Storage", () => {
+describe("Storage", () => {
 	const now = Date.now()
 	const dirPath = __dirname + "/../../tmp/" + now
 	// fs.mkdirpSync(dirPath)

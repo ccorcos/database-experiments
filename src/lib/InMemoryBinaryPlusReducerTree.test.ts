@@ -236,7 +236,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 		test(tree, structuralTests24)
 	})
 
-	describe.only("property test 2-4 * 100", () => {
+	describe("property test 2-4 * 100", () => {
 		propertyTest({ minSize: 2, maxSize: 4, testSize: 100 })
 	})
 

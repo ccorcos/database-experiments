@@ -444,6 +444,7 @@ HERE
 - sqlite query vs interval tree
 
 
+better reducer property test.
 
 
 prolly tree just for fun? prolly not.

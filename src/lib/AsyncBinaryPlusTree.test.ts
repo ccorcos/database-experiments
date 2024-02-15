@@ -693,7 +693,7 @@ describe("AsyncBinaryPlusTree", function () {
 		})
 	})
 
-	it.only("concurreny reads and write", async () => {
+	it("concurreny reads and write", async () => {
 		const clock = new TestClock()
 
 		const sleep = (n: number) => clock.sleep(Math.random() * n)
