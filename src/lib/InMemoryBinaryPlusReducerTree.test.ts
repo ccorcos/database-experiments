@@ -1,7 +1,7 @@
 import { search } from "@ccorcos/ordered-array"
 import { strict as assert } from "assert"
 import { jsonCodec } from "lexicodec"
-import { cloneDeep, max, min, sample, sum, uniqWith } from "lodash"
+import { cloneDeep, max, min, sample, sum, uniq, uniqWith } from "lodash"
 import { describe, it } from "mocha"
 import {
 	InMemoryBinaryPlusReducerTree,
@@ -1021,7 +1021,7 @@ function randomNumbers(size: number, range?: [number, number]) {
 }
 
 function randomInts(size: number, range?: [number, number]) {
-	return randomNumbers(size, range).map((n) => Math.round(n))
+	return uniq(randomNumbers(size, range).map((n) => Math.round(n)))
 }
 
 function parseTests(str: string) {
@@ -1165,42 +1165,6 @@ function verify(tree: InMemoryBinaryPlusReducerTree, id = "root") {
 
 	if (node.leaf) return
 	for (const { childId } of node.children) verify(tree, childId)
-}
-
-/** Check for node sizes. */
-function verifyCount(
-	tree: InMemoryBinaryPlusReducerTree<any, any, number>,
-	id = "root"
-): number {
-	const node = tree.nodes.get(id)
-	if (!node) return 0
-
-	if (node.leaf) {
-		assert.equal(node.data, node.values.length, "leaf count")
-		return node.data
-	}
-
-	let branchCount = 0
-	for (const child of node.children) {
-		const childCount = verifyCount(tree, child.childId)
-		assert.equal(
-			child.data,
-			childCount,
-			[
-				"child count",
-				"minKeys",
-				JSON.stringify(node.children.map((child) => child.minKey)),
-				"item.data",
-				child.data,
-				"node count",
-				childCount,
-				"tree",
-				inspect(tree),
-			].join("\n")
-		)
-		branchCount += child.data
-	}
-	return branchCount
 }
 
 function verifySum(

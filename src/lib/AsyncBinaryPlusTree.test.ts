@@ -200,7 +200,7 @@ const structuralTests24 = `
 
 `
 
-export class AsyncKeyValueStorage {
+export class TestAsyncKeyValueStorage {
 	map = new Map<string, any>()
 
 	constructor(private delay?: () => Promise<void>) {}
@@ -228,7 +228,7 @@ describe("AsyncBinaryPlusTree", function () {
 	this.timeout(10_000)
 
 	describe("structural tests 2-4", async () => {
-		const storage = new AsyncKeyValueStorage()
+		const storage = new TestAsyncKeyValueStorage()
 		const tree = new AsyncBinaryPlusTree(storage, 2, 4)
 		await test(tree, structuralTests24)
 	})
@@ -248,7 +248,7 @@ describe("AsyncBinaryPlusTree", function () {
 	}) {
 		const numbers = randomNumbers(args.testSize)
 
-		const storage = new AsyncKeyValueStorage()
+		const storage = new TestAsyncKeyValueStorage()
 		const tree = new AsyncBinaryPlusTree(storage, args.minSize, args.maxSize)
 
 		// Make sure we aren't in-place mutating any records.
@@ -321,7 +321,7 @@ describe("AsyncBinaryPlusTree", function () {
 
 	it("big tree", async () => {
 		const numbers = randomNumbers(20_000)
-		const storage = new AsyncKeyValueStorage()
+		const storage = new TestAsyncKeyValueStorage()
 		const tree = new AsyncBinaryPlusTree(storage, 3, 9)
 		for (const number of numbers) {
 			await tree.set(number, number * 2)
@@ -335,7 +335,7 @@ describe("AsyncBinaryPlusTree", function () {
 	})
 
 	it("tuple keys", async () => {
-		const storage = new AsyncKeyValueStorage()
+		const storage = new TestAsyncKeyValueStorage()
 		const tree = new AsyncBinaryPlusTree<any[], any>(
 			storage,
 			3,
@@ -386,7 +386,7 @@ describe("AsyncBinaryPlusTree", function () {
 				[8, 21],
 				[50, 100],
 			]) {
-				const storage = new AsyncKeyValueStorage()
+				const storage = new TestAsyncKeyValueStorage()
 				const tree = new AsyncBinaryPlusTree(storage, minSize, maxSize)
 				for (const { key, value } of listEvens(0, 1998)())
 					await tree.set(key, value)
@@ -599,7 +599,7 @@ describe("AsyncBinaryPlusTree", function () {
 		})
 
 		it("property tests", async () => {
-			const storage = new AsyncKeyValueStorage()
+			const storage = new TestAsyncKeyValueStorage()
 			const tree = new AsyncBinaryPlusTree(storage, 3, 9)
 
 			const min = 0
@@ -641,7 +641,7 @@ describe("AsyncBinaryPlusTree", function () {
 		})
 
 		it("smaller property tests", async () => {
-			const storage = new AsyncKeyValueStorage()
+			const storage = new TestAsyncKeyValueStorage()
 			const tree = new AsyncBinaryPlusTree(storage, 3, 9)
 
 			const min = 0
@@ -698,7 +698,7 @@ describe("AsyncBinaryPlusTree", function () {
 
 		const sleep = (n: number) => clock.sleep(Math.random() * n)
 
-		const storage = new AsyncKeyValueStorage(() => sleep(5))
+		const storage = new TestAsyncKeyValueStorage(() => sleep(5))
 		const tree = new AsyncBinaryPlusTree(storage, 3, 6)
 
 		const size = 5000
@@ -828,7 +828,7 @@ type KeyTree =
 	| { keys: Key[]; children: KeyTree[] }
 
 async function toKeyTree(
-	storage: AsyncKeyValueStorage,
+	storage: TestAsyncKeyValueStorage,
 	id = "root"
 ): Promise<KeyTree> {
 	const node = await storage.get(id)
@@ -874,7 +874,7 @@ function print(x: any) {
 	return ""
 }
 
-async function inspect(storage: AsyncKeyValueStorage) {
+async function inspect(storage: TestAsyncKeyValueStorage) {
 	const keyTree = await toKeyTree(storage)
 	const layers = toTreeLayers(keyTree)
 	const str = layers
@@ -889,7 +889,7 @@ async function inspect(storage: AsyncKeyValueStorage) {
 async function verify(tree: AsyncBinaryPlusTree, id = "root") {
 	const node = await tree.storage.get(id)
 	if (id === "root") {
-		const storage = tree.storage as AsyncKeyValueStorage
+		const storage = tree.storage as TestAsyncKeyValueStorage
 		assert.equal(await countNodes(storage), storage.map.size)
 		if (!node) return
 		if (node.leaf) return
@@ -906,7 +906,7 @@ async function verify(tree: AsyncBinaryPlusTree, id = "root") {
 	for (const { childId } of node.children) verify(tree, childId)
 }
 
-async function countNodes(storage: AsyncKeyValueStorage, id = "root") {
+async function countNodes(storage: TestAsyncKeyValueStorage, id = "root") {
 	const node = await storage.get(id)
 	if (id === "root") {
 		if (!node) return 0
@@ -926,8 +926,8 @@ async function countNodes(storage: AsyncKeyValueStorage, id = "root") {
 }
 
 function cloneTree<K, V>(tree: AsyncBinaryPlusTree<K, V>) {
-	const oldStorage = tree.storage as AsyncKeyValueStorage
-	const storage = new AsyncKeyValueStorage()
+	const oldStorage = tree.storage as TestAsyncKeyValueStorage
+	const storage = new TestAsyncKeyValueStorage()
 	storage.map = cloneDeep(oldStorage.map)
 	return new AsyncBinaryPlusTree<K, V>(
 		storage,
