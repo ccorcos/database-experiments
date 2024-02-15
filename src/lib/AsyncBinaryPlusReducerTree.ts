@@ -743,12 +743,12 @@ export class AsyncBinaryPlusReducerTree<K = string | number, V = any, D = any> {
 		}
 
 		// Insert into leaf node.
-		const leaf = nodePath[0] as LeafNode<K, V, D>
-		const newLeaf = { ...leaf, values: [...leaf.values] }
-		this.leafValues.insert(newLeaf.values, { key, value })
-		tx.set(newLeaf.id, newLeaf)
-		// NOTE: leaf.data will be updates later.
-		nodePath[0] = newLeaf
+		let leaf = nodePath[0] as LeafNode<K, V, D>
+		leaf = { ...leaf, values: [...leaf.values] }
+		this.leafValues.insert(leaf.values, { key, value })
+		tx.set(leaf.id, leaf)
+		// leaf.data is updated later
+		nodePath[0] = leaf
 
 		// Balance the tree by splitting nodes, starting from the leaf.
 		let node = nodePath.shift()
@@ -758,40 +758,29 @@ export class AsyncBinaryPlusReducerTree<K = string | number, V = any, D = any> {
 			if (size <= this.maxSize) {
 				// No splitting, update count.
 				if (node.leaf) {
-					const newNode: LeafNode<K, V, D> = {
-						...node,
-						data: this.reducer.leaf(node.values),
-					}
-					node = newNode
-					tx.set(newNode.id, newNode)
+					node = { ...node, data: this.reducer.leaf(node.values) }
+					tx.set(node.id, node)
 				} else {
-					const newNode: BranchNode<K, D> = {
-						...node,
-						data: this.reducer.branch(node.children),
-					}
-					node = newNode
-					tx.set(newNode.id, newNode)
+					node = { ...node, data: this.reducer.branch(node.children) }
+					tx.set(node.id, node)
 				}
 
 				// We're at the root.
 				if (nodePath.length === 0) break
 
 				// Still need to update the parent data.
-				const parent = nodePath.shift() as BranchNode<K, D>
+				let parent = nodePath.shift() as BranchNode<K, D>
 				const parentIndex = indexPath.shift()!
 
-				const newParent: BranchNode<K, D> = {
-					...parent,
-					children: [...parent.children],
-				}
-				newParent.children[parentIndex] = {
-					...newParent.children[parentIndex],
+				parent = { ...parent, children: [...parent.children] }
+				parent.children[parentIndex] = {
+					...parent.children[parentIndex],
 					data: node.data,
 				}
-				tx.set(newParent.id, newParent)
+				tx.set(parent.id, parent)
 
 				// Recur
-				node = newParent
+				node = parent
 				continue
 			}
 
@@ -838,34 +827,31 @@ export class AsyncBinaryPlusReducerTree<K = string | number, V = any, D = any> {
 
 				// Insert right node into parent.
 				const nodeValues = node.values.slice(0, splitIndex)
-				const newNode: LeafNode<K, V, D> = {
+				node = {
 					...node,
 					data: this.reducer.leaf(nodeValues),
 					values: nodeValues,
 				}
-				tx.set(newNode.id, newNode)
+				tx.set(node.id, node)
 
-				const parent = nodePath.shift() as BranchNode<K, D>
+				let parent = nodePath.shift() as BranchNode<K, D>
 				const parentIndex = indexPath.shift()
 				if (!parent) throw new Error("Broken.")
 				if (parentIndex === undefined) throw new Error("Broken.")
 
-				const newParent: BranchNode<K, D> = {
-					...parent,
-					children: [...parent.children],
-				}
-				newParent.children.splice(parentIndex + 1, 0, {
+				parent = { ...parent, children: [...parent.children] }
+				parent.children.splice(parentIndex + 1, 0, {
 					minKey: rightMinKey,
 					childId: rightNode.id,
 					data: rightNode.data,
 				})
 				parent.children[parentIndex] = {
 					...parent.children[parentIndex],
-					data: newNode.data,
+					data: node.data,
 				}
 
 				// Recur
-				node = newParent
+				node = parent
 				continue
 			}
 
@@ -901,36 +887,33 @@ export class AsyncBinaryPlusReducerTree<K = string | number, V = any, D = any> {
 			}
 
 			// Insert right node into parent.
-			const newNodeChildren = node.children.slice(0, splitIndex)
-			const newNode: BranchNode<K, D> = {
+			const nodeChildren = node.children.slice(0, splitIndex)
+			node = {
 				...node,
-				data: this.reducer.branch(newNodeChildren),
-				children: newNodeChildren,
+				data: this.reducer.branch(nodeChildren),
+				children: nodeChildren,
 			}
-			tx.set(newNode.id, newNode)
+			tx.set(node.id, node)
 
-			const parent = nodePath.shift() as BranchNode<K, D>
+			let parent = nodePath.shift() as BranchNode<K, D>
 			const parentIndex = indexPath.shift()
 			if (!parent) throw new Error("Broken.")
 			if (parentIndex === undefined) throw new Error("Broken.")
 
-			const newParent: BranchNode<K, D> = {
-				...parent,
-				children: [...parent.children],
-			}
-			newParent.children.splice(parentIndex + 1, 0, {
+			parent = { ...parent, children: [...parent.children] }
+			parent.children.splice(parentIndex + 1, 0, {
 				minKey: rightMinKey,
 				childId: rightNode.id,
 				data: rightNode.data,
 			})
-			newParent.children[parentIndex] = {
-				...newParent.children[parentIndex],
-				data: newNode.data,
+			parent.children[parentIndex] = {
+				...parent.children[parentIndex],
+				data: node.data,
 			}
-			tx.set(newParent.id, newParent)
+			tx.set(parent.id, parent)
 
 			// Recur
-			node = newParent
+			node = parent
 			continue
 		}
 	}
@@ -946,16 +929,16 @@ export class AsyncBinaryPlusReducerTree<K = string | number, V = any, D = any> {
 		const nodePath = [root]
 		const indexPath: number[] = []
 		while (true) {
-			const node = nodePath[0]
+			let node = nodePath[0]
 
 			if (node.leaf) {
-				const newNode: LeafNode<K, V, D> = { ...node, values: [...node.values] }
-				const exists = this.leafValues.remove(newNode.values, key)
+				node = { ...node, values: [...node.values] }
+				const exists = this.leafValues.remove(node.values, key)
 				if (!exists) return // No changes to the tree!
-				tx.set(newNode.id, newNode)
+				tx.set(node.id, node)
 
 				// Continue to rebalance
-				nodePath[0] = newNode
+				nodePath[0] = node
 				break
 			}
 
@@ -1057,7 +1040,7 @@ export class AsyncBinaryPlusReducerTree<K = string | number, V = any, D = any> {
 			if (node.leaf) {
 				if (parentIndex === 0) {
 					const rightId = parent.children[parentIndex + 1].childId
-					const rightSibling = (await tx.get(rightId)) as typeof node
+					let rightSibling = (await tx.get(rightId)) as typeof node
 					if (!rightSibling) throw new Error("Broken.")
 
 					const combinedSize = node.values.length + rightSibling.values.length
@@ -1066,87 +1049,72 @@ export class AsyncBinaryPlusReducerTree<K = string | number, V = any, D = any> {
 					if (combinedSize > this.maxSize) {
 						const splitIndex = Math.round(combinedSize / 2) - node.values.length
 
-						const newRight: LeafNode<K, V, D> = {
-							...rightSibling,
-							values: [...rightSibling.values],
-						}
-						const moveLeft = newRight.values.splice(0, splitIndex)
-						newRight.data = this.reducer.leaf(newRight.values)
-						tx.set(newRight.id, newRight)
+						rightSibling = { ...rightSibling, values: [...rightSibling.values] }
+						const moveLeft = rightSibling.values.splice(0, splitIndex)
+						rightSibling.data = this.reducer.leaf(rightSibling.values)
+						tx.set(rightSibling.id, rightSibling)
 
-						const newNode: LeafNode<K, V, D> = {
-							...node,
-							values: [...node.values],
-						}
-						newNode.values.push(...moveLeft)
-						newNode.data = this.reducer.leaf(newNode.values)
-						tx.set(newNode.id, newNode)
+						node = { ...node, values: [...node.values] }
+						node.values.push(...moveLeft)
+						node.data = this.reducer.leaf(node.values)
+						tx.set(node.id, node)
 
 						// Update parent minKey.
-						const newParent: BranchNode<K, D> = {
-							...parent,
-							children: [...parent.children],
-						}
-						if (newParent.children[parentIndex].minKey !== null) {
-							const leftMinKey = newNode.values[0].key
-							newParent.children[parentIndex] = {
+						parent = { ...parent, children: [...parent.children] }
+						if (parent.children[parentIndex].minKey !== null) {
+							const leftMinKey = node.values[0].key
+							parent.children[parentIndex] = {
 								minKey: leftMinKey,
-								childId: newNode.id,
-								data: newNode.data,
+								childId: node.id,
+								data: node.data,
 							}
 						} else {
-							newParent.children[parentIndex] = {
-								...newParent.children[parentIndex],
-								data: newNode.data,
+							parent.children[parentIndex] = {
+								...parent.children[parentIndex],
+								data: node.data,
 							}
 						}
-						const rightMinKey = newRight.values[0].key
-						newParent.children[parentIndex + 1] = {
+						const rightMinKey = rightSibling.values[0].key
+						parent.children[parentIndex + 1] = {
 							minKey: rightMinKey,
-							childId: newRight.id,
-							data: newRight.data,
+							childId: rightSibling.id,
+							data: rightSibling.data,
 						}
-						tx.set(newParent.id, newParent)
+						tx.set(parent.id, parent)
 
 						// Recur
-						node = newParent
+						node = parent
 						continue
 					}
 
 					// Merge leaves.
-					const newRight: LeafNode<K, V, D> = {
-						...rightSibling,
-						values: [...rightSibling.values],
-					}
-					newRight.values.unshift(...node.values)
-					newRight.data = this.reducer.leaf(newRight.values)
+					rightSibling = { ...rightSibling, values: [...rightSibling.values] }
+					rightSibling.values.unshift(...node.values)
+					rightSibling.data = this.reducer.leaf(rightSibling.values)
 
 					// Remove the old pointer to rightSibling
-					const newParent: BranchNode<K, D> = {
-						...parent,
-						children: [...parent.children],
-					}
-					newParent.children.splice(1, 1)
+					parent = { ...parent, children: [...parent.children] }
+					parent.children.splice(1, 1)
 
 					// Replace the node pointer with the new rightSibling
-					const leftMost = newParent.children[0].minKey === null
-					newParent.children[0] = {
-						minKey: leftMost ? null : newRight.values[0].key,
-						childId: newRight.id,
-						data: newRight.data,
+					const leftMost = parent.children[0].minKey === null
+					parent.children[0] = {
+						minKey: leftMost ? null : rightSibling.values[0].key,
+						childId: rightSibling.id,
+						data: rightSibling.data,
 					}
-					tx.set(newRight.id, newRight)
-					tx.set(newParent.id, newParent)
+					tx.set(rightSibling.id, rightSibling)
+					tx.set(parent.id, parent)
 					tx.delete(node.id)
 
 					// Recur
-					node = newParent
+					node = parent
 					continue
 				}
 
 				// Merge or redistribute with left sibling.
 				const leftId = parent.children[parentIndex - 1].childId
-				const leftSibling = (await tx.get(leftId)) as typeof node
+				let leftSibling = (await tx.get(leftId)) as typeof node
 				if (!leftSibling) throw new Error("Broken.")
 
 				const combinedSize = leftSibling.values.length + node.values.length
@@ -1155,81 +1123,65 @@ export class AsyncBinaryPlusReducerTree<K = string | number, V = any, D = any> {
 				if (combinedSize > this.maxSize) {
 					const splitIndex = Math.round(combinedSize / 2)
 
-					const newLeft: LeafNode<K, V, D> = {
-						...leftSibling,
-						values: [...leftSibling.values],
-					}
+					leftSibling = { ...leftSibling, values: [...leftSibling.values] }
 
-					const moveRight = newLeft.values.splice(splitIndex, this.maxSize)
+					const moveRight = leftSibling.values.splice(splitIndex, this.maxSize)
 
-					const newNode: LeafNode<K, V, D> = {
-						...node,
-						values: [...node.values],
-					}
-					newNode.values.unshift(...moveRight)
+					node = { ...node, values: [...node.values] }
+					node.values.unshift(...moveRight)
 
-					newLeft.data = this.reducer.leaf(newLeft.values)
-					newNode.data = this.reducer.leaf(newNode.values)
+					leftSibling.data = this.reducer.leaf(leftSibling.values)
+					node.data = this.reducer.leaf(node.values)
 
 					// Update parent keys.
-					const newParent: BranchNode<K, D> = {
-						...parent,
-						children: [...parent.children],
-					}
-
-					newParent.children[parentIndex] = {
-						minKey: newNode.values[0].key,
-						childId: newNode.id,
-						data: newNode.data,
+					parent = { ...parent, children: [...parent.children] }
+					parent.children[parentIndex] = {
+						minKey: node.values[0].key,
+						childId: node.id,
+						data: node.data,
 					}
 					parent.children[parentIndex - 1] = {
 						...parent.children[parentIndex - 1],
-						data: newLeft.data,
+						data: leftSibling.data,
 					}
 
-					tx.set(newLeft.id, newLeft)
-					tx.set(newNode.id, newNode)
-					tx.set(newParent.id, newParent)
+					tx.set(leftSibling.id, leftSibling)
+					tx.set(node.id, node)
+					tx.set(parent.id, parent)
 
 					// Recur
-					node = newParent
+					node = parent
 					continue
 				}
 
 				// Merge
-				const newLeft: LeafNode<K, V, D> = {
-					...leftSibling,
-					values: [...leftSibling.values],
-				}
-				newLeft.values.push(...node.values)
-				newLeft.data = this.reducer.leaf(newLeft.values)
+				leftSibling = { ...leftSibling, values: [...leftSibling.values] }
+				leftSibling.values.push(...node.values)
+				leftSibling.data = this.reducer.leaf(leftSibling.values)
 
 				// Just need to delete the old node.
-				const newParent: BranchNode<K, D> = {
-					...parent,
-					children: [...parent.children],
-				}
-				newParent.children.splice(parentIndex, 1)
+				parent = { ...parent, children: [...parent.children] }
+				parent.children.splice(parentIndex, 1)
 
 				// No need to update minKey because we added to the right.
-				newParent.children[parentIndex - 1] = {
-					...newParent.children[parentIndex - 1],
+				parent.children[parentIndex - 1] = {
+					...parent.children[parentIndex - 1],
 					data: leftSibling.data,
 				}
 
-				tx.set(newLeft.id, newLeft)
-				tx.set(newParent.id, newParent)
+				tx.set(leftSibling.id, leftSibling)
+				tx.set(parent.id, parent)
 				tx.delete(node.id)
 
 				// Recur
-				node = newParent
+				node = parent
 				continue
 			}
 
 			// Merge or redistribute branch nodes.
 			if (parentIndex === 0) {
 				const rightId = parent.children[parentIndex + 1].childId
-				const rightSibling = (await tx.get(rightId)) as typeof node
+				let rightSibling = (await tx.get(rightId)) as typeof node
 				if (!rightSibling) throw new Error("Broken.")
 
 				const combinedSize = node.children.length + rightSibling.children.length
@@ -1238,87 +1190,75 @@ export class AsyncBinaryPlusReducerTree<K = string | number, V = any, D = any> {
 				if (combinedSize > this.maxSize) {
 					const splitIndex = Math.round(combinedSize / 2) - node.children.length
 
-					const newRight: BranchNode<K, D> = {
+					rightSibling = {
 						...rightSibling,
 						children: [...rightSibling.children],
 					}
-					const moveLeft = newRight.children.splice(0, splitIndex)
-					newRight.data = this.reducer.branch(newRight.children)
-					tx.set(newRight.id, newRight)
+					const moveLeft = rightSibling.children.splice(0, splitIndex)
+					rightSibling.data = this.reducer.branch(rightSibling.children)
+					tx.set(rightSibling.id, rightSibling)
 
-					const newNode: BranchNode<K, D> = {
-						...node,
-						children: [...node.children],
-					}
-					newNode.children.push(...moveLeft)
-					newNode.data = this.reducer.branch(newNode.children)
-					tx.set(newNode.id, newNode)
+					node = { ...node, children: [...node.children] }
+					node.children.push(...moveLeft)
+					node.data = this.reducer.branch(node.children)
+					tx.set(node.id, node)
 
 					// Update parent minKey.
-					const newParent: BranchNode<K, D> = {
-						...parent,
-						children: [...parent.children],
-					}
-					if (newParent.children[parentIndex].minKey !== null) {
-						const leftMinKey = newNode.children[0].minKey
-						newParent.children[parentIndex] = {
+					parent = { ...parent, children: [...parent.children] }
+					if (parent.children[parentIndex].minKey !== null) {
+						const leftMinKey = node.children[0].minKey
+						parent.children[parentIndex] = {
 							minKey: leftMinKey,
-							childId: newNode.id,
-							data: newNode.data,
+							childId: node.id,
+							data: node.data,
 						}
 					} else {
-						newParent.children[parentIndex] = {
-							...newParent.children[parentIndex],
-							data: newNode.data,
+						parent.children[parentIndex] = {
+							...parent.children[parentIndex],
+							data: node.data,
 						}
 					}
-					const rightMinKey = newRight.children[0].minKey
-					newParent.children[parentIndex + 1] = {
+					const rightMinKey = rightSibling.children[0].minKey
+					parent.children[parentIndex + 1] = {
 						minKey: rightMinKey,
-						childId: newRight.id,
-						data: newRight.data,
+						childId: rightSibling.id,
+						data: rightSibling.data,
 					}
-					tx.set(newParent.id, newParent)
+					tx.set(parent.id, parent)
 
 					// Recur
-					node = newParent
+					node = parent
 					continue
 				}
 
 				// Merge leaves.
-				const newRight: BranchNode<K, D> = {
-					...rightSibling,
-					children: [...rightSibling.children],
-				}
-				newRight.children.unshift(...node.children)
-				newRight.data = this.reducer.branch(newRight.children)
+				rightSibling = { ...rightSibling, children: [...rightSibling.children] }
+				rightSibling.children.unshift(...node.children)
+				rightSibling.data = this.reducer.branch(rightSibling.children)
 
 				// Remove the old pointer to rightSibling
-				const newParent: BranchNode<K, D> = {
-					...parent,
-					children: [...parent.children],
-				}
-				newParent.children.splice(1, 1)
+				parent = { ...parent, children: [...parent.children] }
+				parent.children.splice(1, 1)
 
 				// Replace the node pointer with the new rightSibling
-				const leftMost = newParent.children[0].minKey === null
-				newParent.children[0] = {
-					minKey: leftMost ? null : newRight.children[0].minKey,
-					childId: newRight.id,
-					data: newRight.data,
+				const leftMost = parent.children[0].minKey === null
+				parent.children[0] = {
+					minKey: leftMost ? null : rightSibling.children[0].minKey,
+					childId: rightSibling.id,
+					data: rightSibling.data,
 				}
-				tx.set(newRight.id, newRight)
-				tx.set(newParent.id, newParent)
+				tx.set(rightSibling.id, rightSibling)
+				tx.set(parent.id, parent)
 				tx.delete(node.id)
 
 				// Recur
-				node = newParent
+				node = parent
 				continue
 			}
 
 			// Merge or redistribute with left sibling.
 			const leftId = parent.children[parentIndex - 1].childId
-			const leftSibling = (await tx.get(leftId)) as typeof node
+			let leftSibling = (await tx.get(leftId)) as typeof node
 			if (!leftSibling) throw new Error("Broken.")
 
 			const combinedSize = leftSibling.children.length + node.children.length
@@ -1327,58 +1267,43 @@ export class AsyncBinaryPlusReducerTree<K = string | number, V = any, D = any> {
 			if (combinedSize > this.maxSize) {
 				const splitIndex = Math.round(combinedSize / 2)
 
-				const newLeft: BranchNode<K, D> = {
-					...leftSibling,
-					children: [...leftSibling.children],
-				}
-				const moveRight = newLeft.children.splice(splitIndex, this.maxSize)
-				newLeft.data = this.reducer.branch(newLeft.children)
+				leftSibling = { ...leftSibling, children: [...leftSibling.children] }
+				const moveRight = leftSibling.children.splice(splitIndex, this.maxSize)
+				leftSibling.data = this.reducer.branch(leftSibling.children)
 
-				const newNode: BranchNode<K, D> = {
-					...node,
-					children: [...node.children],
-				}
-				newNode.children.unshift(...moveRight)
-				newNode.data = this.reducer.branch(newNode.children)
+				node = { ...node, children: [...node.children] }
+				node.children.unshift(...moveRight)
+				node.data = this.reducer.branch(node.children)
 
 				// Update parent keys.
-				const newParent: BranchNode<K, D> = {
-					...parent,
-					children: [...parent.children],
+				parent = { ...parent, children: [...parent.children] }
+				parent.children[parentIndex] = {
+					minKey: node.children[0].minKey,
+					childId: node.id,
+					data: node.data,
 				}
-				newParent.children[parentIndex] = {
-					minKey: newNode.children[0].minKey,
-					childId: newNode.id,
-					data: newNode.data,
-				}
-				newParent.children[parentIndex - 1] = {
-					...newParent.children[parentIndex - 1],
-					data: newLeft.data,
+				parent.children[parentIndex - 1] = {
+					...parent.children[parentIndex - 1],
+					data: leftSibling.data,
 				}
 
-				tx.set(newLeft.id, newLeft)
-				tx.set(newNode.id, newNode)
-				tx.set(newParent.id, newParent)
+				tx.set(leftSibling.id, leftSibling)
+				tx.set(node.id, node)
+				tx.set(parent.id, parent)
 
 				// Recur
-				node = newParent
+				node = parent
 				continue
 			}
 
 			// Merge
-			const newLeft: BranchNode<K, D> = {
-				...leftSibling,
-				children: [...leftSibling.children],
-			}
-			newLeft.children.push(...node.children)
-			newLeft.data = this.reducer.branch(newLeft.children)
+			leftSibling = { ...leftSibling, children: [...leftSibling.children] }
+			leftSibling.children.push(...node.children)
+			leftSibling.data = this.reducer.branch(leftSibling.children)
 
 			// Just need to delete the old node.
-			const newParent: BranchNode<K, D> = {
-				...parent,
-				children: [...parent.children],
-			}
-			newParent.children.splice(parentIndex, 1)
+			parent = { ...parent, children: [...parent.children] }
+			parent.children.splice(parentIndex, 1)
 
 			// No need to update minKey because we added to the right.
 			parent.children[parentIndex - 1] = {
@@ -1386,12 +1311,12 @@ export class AsyncBinaryPlusReducerTree<K = string | number, V = any, D = any> {
 				data: leftSibling.data,
 			}
 
-			tx.set(newLeft.id, newLeft)
-			tx.set(newParent.id, newParent)
+			tx.set(leftSibling.id, leftSibling)
+			tx.set(parent.id, parent)
 			tx.delete(node.id)
 
 			// Recur
-			node = newParent
+			node = parent
 			continue
 		}
 	}

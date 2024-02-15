@@ -256,7 +256,7 @@ export class TestAsyncKeyValueStorage {
 	}
 }
 
-describe.only("AsyncBinaryPlusReducerTree", function () {
+describe("AsyncBinaryPlusReducerTree", function () {
 	this.timeout(10_000)
 
 	describe("structural tests 2-4", async () => {
