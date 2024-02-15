@@ -236,7 +236,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 		test(tree, structuralTests24)
 	})
 
-	describe("property test 2-4 * 100", () => {
+	describe.only("property test 2-4 * 100", () => {
 		propertyTest({ minSize: 2, maxSize: 4, testSize: 100 })
 	})
 
@@ -252,66 +252,55 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 		const size = args.testSize
 		const numbers = randomInts(size)
 
-		const tree = new InMemoryBinaryPlusReducerTree(
-			args.minSize,
-			args.maxSize,
-			count
-		)
+		const tree = new InMemoryBinaryPlusReducerTree<
+			string | number,
+			number,
+			number
+		>(args.minSize, args.maxSize, sumReducer)
 		for (let i = 0; i < size; i++) {
 			const n = numbers[i]
 			it(`Set ${i} : ${n}`, () => {
-				// it(`+ ${n}`, () => {
-				tree.set(n, n.toString())
+				tree.set(n, n)
 				verify(tree)
+				verifySum(tree)
 
 				// Get works on every key so far.
 				for (let j = 0; j <= i; j++) {
 					const x = numbers[j]
-					assert.equal(tree.get(x), x.toString())
+					assert.equal(tree.get(x), x)
 				}
-				// })
 
 				// Overwrite the jth key.
 				for (let j = 0; j <= i; j++) {
 					const x = numbers[j]
-
-					// it(`Overwrite ${j}: ${x}`, () => {
 					const t = cloneTree(tree)
 					t.set(x, x * 2)
 					verify(t)
+					verifySum(t)
 
 					// Check get on all keys.
 					for (let k = 0; k <= i; k++) {
 						const y = numbers[k]
 						if (x === y) assert.equal(t.get(y), y * 2)
-						else assert.equal(t.get(y), y.toString())
+						else assert.equal(t.get(y), y)
 					}
-					// })
 				}
 
 				// Delete the jth key.
 				for (let j = 0; j <= i; j++) {
 					const x = numbers[j]
 
-					// it(`Delete ${j} : ${x}`, () => {
 					const t = cloneTree(tree)
 					t.delete(x)
-					try {
-						verify(t)
-					} catch (error) {
-						console.log("BEFORE", inspect(tree))
-						console.log("DELETE", x)
-						console.log("AFTER", inspect(t))
-						throw error
-					}
+					verify(t)
+					verifySum(t)
 
 					// Check get on all keys.
 					for (let k = 0; k <= i; k++) {
 						const y = numbers[k]
 						if (x === y) assert.equal(t.get(y), undefined)
-						else assert.equal(t.get(y), y.toString())
+						else assert.equal(t.get(y), y)
 					}
-					// })
 				}
 			})
 		}
@@ -839,68 +828,6 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 			}
 		})
 
-		it("sum test", () => {
-			const tree = new InMemoryBinaryPlusReducerTree(3, 9, sumReducer)
-
-			const min = 0
-			const max = 400
-			const delta = 20
-
-			const items = listEvens(min, max)
-			for (const { key, value } of items()) tree.set(key, value)
-
-			const sumTest1 = (
-				args: {
-					gt?: number
-					gte?: number
-					lt?: number
-					lte?: number
-				} = {}
-			) => {
-				assert.deepEqual(
-					tree.reduce(args),
-					sum(items(args).map((x) => x.value))
-					// JSON.stringify(args)
-				)
-			}
-
-			for (let start = -min - delta; start < max + delta; start += 3) {
-				for (let end = start + 1; end < max + delta; end += 5) {
-					sumTest1({ gt: start, lt: end })
-					sumTest1({ gte: start, lt: end })
-					sumTest1({ gt: start, lte: end })
-					sumTest1({ gte: start, lte: end })
-				}
-			}
-
-			const sumTest2 = (
-				args: {
-					gt?: number
-					gte?: number
-					lt?: number
-					lte?: number
-				} = {}
-			) => {
-				assert.deepEqual(
-					tree.reduce(args),
-					sum(items(args).map((x) => x.value)) * 2,
-					JSON.stringify(args)
-				)
-			}
-
-			// Double every value.
-			for (const { key, value } of items()) tree.set(key, value * 2)
-
-			for (let start = -min - delta; start < max + delta; start += 3) {
-				for (let end = start + 1; end < max + delta; end += 5) {
-					sumTest2({ gt: start, lt: end })
-					sumTest2({ gte: start, lt: end })
-					sumTest2({ gt: start, lte: end })
-					sumTest2({ gte: start, lte: end })
-				}
-			}
-		})
-
 		it("smaller property tests", () => {
 			const tree = new InMemoryBinaryPlusReducerTree(3, 9, count)
 
@@ -1256,6 +1183,41 @@ function verifyCount(
 	let branchCount = 0
 	for (const child of node.children) {
 		const childCount = verifyCount(tree, child.childId)
+		assert.equal(
+			child.data,
+			childCount,
+			[
+				"child count",
+				"minKeys",
+				JSON.stringify(node.children.map((child) => child.minKey)),
+				"item.data",
+				child.data,
+				"node count",
+				childCount,
+				"tree",
+				inspect(tree),
+			].join("\n")
+		)
+		branchCount += child.data
+	}
+	return branchCount
+}
+
+function verifySum(
+	tree: InMemoryBinaryPlusReducerTree<any, number, number>,
+	id = "root"
+): number {
+	const node = tree.nodes.get(id)
+	if (!node) return 0
+
+	if (node.leaf) {
+		assert.equal(node.data, sum(node.values.map((x) => x.value)))
+		return node.data
+	}
+
+	let branchCount = 0
+	for (const child of node.children) {
+		const childCount = verifySum(tree, child.childId)
 		assert.equal(
 			child.data,
 			childCount,

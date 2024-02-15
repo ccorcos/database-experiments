@@ -631,14 +631,14 @@ export class InMemoryBinaryPlusReducerTree<
 			const size = node.leaf ? node.values.length : node.children.length
 
 			if (size <= this.maxSize) {
-				// No splitting, update count.
+				// No splitting, update data.
 				if (node.leaf) node.data = this.reducer.leaf(node.values)
 				else node.data = this.reducer.branch(node.children)
 
 				// We're at the root.
 				if (nodePath.length === 0) break
 
-				// Still need to update the parent counts.
+				// Still need to update the parent data.
 				const parent = nodePath.shift() as BranchNode<K, D>
 				const parentIndex = indexPath.shift()!
 				parent.children[parentIndex].data = node.data
