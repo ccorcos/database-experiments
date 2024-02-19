@@ -5,40 +5,42 @@ import {
 	TreeReducer,
 } from "./InMemoryReducerTree"
 
-function intervalReducer<I extends [any, any]>(
-	reduce: (acc: I, interval: I) => I
-): TreeReducer<[...I, any], any, I> {
-	return {
-		leaf: (values) => {
-			let bound = values[0].key.slice(0, 2) as I
-			for (let i = 1; i < values.length; i++) {
-				bound = reduce(bound, values[i].key.slice(0, 2) as I)
-			}
-			return bound
-		},
-		branch: (children) => {
-			let bound = children[0].data
-			for (let i = 1; i < children.length; i++) {
-				bound = reduce(bound, children[i].data)
-			}
-			return bound
-		},
-	}
-}
-
-export class BinaryPlusIntervalTree<
-	B,
-	K extends [B, B, any],
-	V = any
+export class InMemoryIntervalTree<
+	K extends [B, B, ...any[]],
+	V = any,
+	B = any
 > extends InMemoryReducerTree<K, V, [B, B]> {
 	constructor(
 		public minSize: number,
 		public maxSize: number,
-		public reduceInterval: (acc: [B, B], interval: [B, B]) => [B, B],
 		public compareKey: (a: K, b: K) => number,
 		public compareBound: (a: B, b: B) => number
 	) {
-		const reducer = intervalReducer(reduceInterval)
+		const reducer: TreeReducer<K, V, [B, B]> = {
+			leaf: (values) => {
+				let a = values[0].key.slice(0, 2) as [B, B]
+				for (let i = 1; i < values.length; i++) {
+					const b = values[i].key.slice(0, 2) as [B, B]
+					a = [
+						this.compareBound(a[0], b[0]) <= 0 ? a[0] : b[0],
+						this.compareBound(a[1], b[1]) >= 0 ? a[1] : b[1],
+					]
+				}
+				return a
+			},
+			branch: (children) => {
+				let a = children[0].data
+				for (let i = 1; i < children.length; i++) {
+					const b = children[i].data
+					a = [
+						this.compareBound(a[0], b[0]) <= 0 ? a[0] : b[0],
+						this.compareBound(a[1], b[1]) >= 0 ? a[1] : b[1],
+					]
+				}
+				return a
+			},
+		}
+
 		super(minSize, maxSize, reducer, compareKey)
 	}
 
@@ -52,9 +54,17 @@ export class BinaryPlusIntervalTree<
 		)
 	}
 
-	overlaps([start, end]: [B, B]) {
-		const root = this.nodes["root"]
+	overlaps(args: { gt?: B; gte?: B; lt?: B; lte?: B }) {
+		const root = this.nodes.get("root")
+
 		if (!root) return []
+
+		// Fix this later.
+		const start = args.gt !== undefined ? args.gt : args.gte
+		const end = args.lt !== undefined ? args.lt : args.lte
+
+		if (start === undefined) throw new Error("No start")
+		if (end === undefined) throw new Error("No end")
 
 		if (root.leaf) {
 			return root.values.filter((item) => {
@@ -66,6 +76,7 @@ export class BinaryPlusIntervalTree<
 		{
 			// No results.
 			const [min, max] = root.data
+
 			if (!this.boundsOverlap([start, end], [min, max])) {
 				return []
 			}
@@ -85,10 +96,12 @@ export class BinaryPlusIntervalTree<
 				}
 			}
 
-			if (nextLayerIds.length === 0) return []
+			if (nextLayerIds.length === 0) {
+				return []
+			}
 
 			const nextLayer = nextLayerIds.map((childId) => {
-				const node = this.nodes[childId]
+				const node = this.nodes.get(childId)
 				if (!node) throw new Error("Broken.")
 				return node
 			})
