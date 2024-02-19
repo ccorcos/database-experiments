@@ -102,6 +102,7 @@ export class AsyncIntervalTree<
 						}
 					}
 				}
+				// console.log("trim", trim / total)
 
 				if (nextLayerIds.length === 0) {
 					return []

@@ -461,11 +461,80 @@ After putting 2000 numbers in a table, compute the sum of various ranges across 
 ```
 
 
+For 20,000 completely random ranges, then overlaps is faster on SQLite because we aren't able to effectively trim nodes from the interval tree. Imagine a calendar, for example, where all events have a random start and end date. That's not a realistic distribution.
+```sh
+┌─────────┬──────────────┬──────────────────────────────────────────┬─────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name                                │ ops/sec │ Margin   │ Samples │
+├─────────┼──────────────┼──────────────────────────────────────────┼─────────┼──────────┼─────────┤
+│ 0       │ '026.762ms'  │ 'random ranges interval tree on leveldb' │ '37'    │ '±1.99%' │ 75      │
+│ 1       │ '006.063ms'  │ 'random ranges sqlite overlaps'          │ '164'   │ '±0.41%' │ 330     │
+└─────────┴──────────────┴──────────────────────────────────────────┴─────────┴──────────┴─────────┘
+```
 
 
-- sqlite count vs reducer tree
-- sqlite overlaps vs interval tree
+```sh
+┌─────────┬──────────────┬────────────────────────────────────────────────────┬─────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name                                          │ ops/sec │ Margin   │ Samples │
+├─────────┼──────────────┼────────────────────────────────────────────────────┼─────────┼──────────┼─────────┤
+│ 0       │ '003.196ms'  │ '20000 items, 5% ranges, interval tree on leveldb' │ '312'   │ '±0.57%' │ 626     │
+│ 1       │ '001.324ms'  │ '20000 items, 5% ranges, sqlite overlaps'          │ '755'   │ '±1.54%' │ 1511    │
+└─────────┴──────────────┴────────────────────────────────────────────────────┴─────────┴──────────┴─────────┘
+```
 
+```sh
+┌─────────┬──────────────┬─────────────────────────────────────────────────────┬─────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name                                           │ ops/sec │ Margin   │ Samples │
+├─────────┼──────────────┼─────────────────────────────────────────────────────┼─────────┼──────────┼─────────┤
+│ 0       │ '004.800ms'  │ '100000 items, 2% ranges, interval tree on leveldb' │ '208'   │ '±0.71%' │ 417     │
+│ 1       │ '006.708ms'  │ '100000 items, 2% ranges, sqlite overlaps'          │ '149'   │ '±0.27%' │ 299     │
+└─────────┴──────────────┴─────────────────────────────────────────────────────┴─────────┴──────────┴─────────┘
+```
+
+
+Realistic calendar view...
+
+2 decades of data:
+- 5-15x 15min-3hr long meetings / week
+- 3-12x 1day-4day events per month.
+- 2-5x 5day-20day events per year.
+
+Then we'll query for every day view, every week view, and every month view.
+
+Approximately 10k events and 8784 queries.
+
+```sh
+┌─────────┬──────────────┬─────────────────────────────────────┬─────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name                           │ ops/sec │ Margin   │ Samples │
+├─────────┼──────────────┼─────────────────────────────────────┼─────────┼──────────┼─────────┤
+│ 0       │ '656.892ms'  │ 'calendar interval tree on leveldb' │ '1'     │ '±1.69%' │ 20      │
+│ 1       │ '001.752s'   │ 'calendar sqlite overlaps'          │ '0'     │ '±0.68%' │ 20      │
+└─────────┴──────────────┴─────────────────────────────────────┴─────────┴──────────┴─────────┘
+```
+
+
+Lets try 20 decades to simulate having many more users.
+100k events, 87624 ranges. But we're going to sample 1000 ranges at a time.
+
+
+Ok, now we're ~20x faster than SQLite.
+
+```ts
+┌─────────┬──────────────┬─────────────────────────────────────┬─────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name                           │ ops/sec │ Margin   │ Samples │
+├─────────┼──────────────┼─────────────────────────────────────┼─────────┼──────────┼─────────┤
+│ 0       │ '101.121ms'  │ 'calendar interval tree on leveldb' │ '9'     │ '±2.19%' │ 20      │
+│ 1       │ '002.144s'   │ 'calendar sqlite overlaps'          │ '0'     │ '±1.48%' │ 10      │
+└─────────┴──────────────┴─────────────────────────────────────┴─────────┴──────────┴─────────┘
+```
+
+
+TODO: explain the perf tests above.
+
+TODO: compare with SQLite rtree index.
+
+
+
+---
 
 
 
