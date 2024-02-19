@@ -58,11 +58,7 @@ export function combineTreeReducers<
 	return combined
 }
 
-export class InMemoryBinaryPlusReducerTree<
-	K = string | number,
-	V = any,
-	D = any
-> {
+export class InMemoryReducerTree<K = string | number, V = any, D = any> {
 	nodes = new Map<string, BranchNode<K, D> | LeafNode<K, V, D>>()
 
 	/**

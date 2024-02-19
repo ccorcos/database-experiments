@@ -5,11 +5,11 @@ import { jsonCodec } from "lexicodec"
 import { cloneDeep, max, min, sample, sum, uniq, uniqWith } from "lodash"
 import { describe, it } from "mocha"
 import {
-	AsyncBinaryPlusReducerTree,
 	AsyncKeyValueStorage,
+	AsyncReducerTree,
 	TreeReducer,
 	combineTreeReducers,
-} from "./AsyncBinaryPlusReducerTree"
+} from "./AsyncReducerTree"
 
 // min = 2, max = 4
 const structuralTests24 = `
@@ -256,12 +256,12 @@ export class TestAsyncKeyValueStorage {
 	}
 }
 
-describe("AsyncBinaryPlusReducerTree", function () {
+describe("AsyncReducerTree", function () {
 	this.timeout(10_000)
 
 	describe("structural tests 2-4", async () => {
 		const storage = new TestAsyncKeyValueStorage()
-		const tree = new AsyncBinaryPlusReducerTree(storage, 2, 4, count)
+		const tree = new AsyncReducerTree(storage, 2, 4, count)
 		await test(tree, structuralTests24)
 	})
 
@@ -281,11 +281,12 @@ describe("AsyncBinaryPlusReducerTree", function () {
 		const numbers = randomInts(args.testSize)
 
 		const storage = new TestAsyncKeyValueStorage()
-		const tree = new AsyncBinaryPlusReducerTree<
-			string | number,
-			number,
-			number
-		>(storage, args.minSize, args.maxSize, sumReducer)
+		const tree = new AsyncReducerTree<string | number, number, number>(
+			storage,
+			args.minSize,
+			args.maxSize,
+			sumReducer
+		)
 
 		// Make sure we aren't in-place mutating any records.
 		const assertImmutable = async (fn: () => Promise<void>) => {
@@ -354,7 +355,7 @@ describe("AsyncBinaryPlusReducerTree", function () {
 	it("big tree", async () => {
 		const numbers = randomInts(20_000)
 		const storage = new TestAsyncKeyValueStorage()
-		const tree = new AsyncBinaryPlusReducerTree(storage, 3, 9, count)
+		const tree = new AsyncReducerTree(storage, 3, 9, count)
 		for (const number of numbers) {
 			await tree.set(number, number * 2)
 			assert.equal(await tree.get(number), number * 2)
@@ -368,7 +369,7 @@ describe("AsyncBinaryPlusReducerTree", function () {
 
 	it("tuple keys", async () => {
 		const storage = new TestAsyncKeyValueStorage()
-		const tree = new AsyncBinaryPlusReducerTree<any[], any>(
+		const tree = new AsyncReducerTree<any[], any>(
 			storage,
 			3,
 			9,
@@ -420,12 +421,7 @@ describe("AsyncBinaryPlusReducerTree", function () {
 				[50, 100],
 			]) {
 				const storage = new TestAsyncKeyValueStorage()
-				const tree = new AsyncBinaryPlusReducerTree(
-					storage,
-					minSize,
-					maxSize,
-					count
-				)
+				const tree = new AsyncReducerTree(storage, minSize, maxSize, count)
 				for (const { key, value } of listEvens(0, 1998)())
 					await tree.set(key, value)
 
@@ -638,7 +634,7 @@ describe("AsyncBinaryPlusReducerTree", function () {
 
 		it("property tests", async () => {
 			const storage = new TestAsyncKeyValueStorage()
-			const tree = new AsyncBinaryPlusReducerTree(storage, 3, 9, count)
+			const tree = new AsyncReducerTree(storage, 3, 9, count)
 
 			const min = 0
 			const max = 400
@@ -680,7 +676,7 @@ describe("AsyncBinaryPlusReducerTree", function () {
 
 		it("smaller property tests", async () => {
 			const storage = new TestAsyncKeyValueStorage()
-			const tree = new AsyncBinaryPlusReducerTree(storage, 3, 9, count)
+			const tree = new AsyncReducerTree(storage, 3, 9, count)
 
 			const min = 0
 			const max = 100
@@ -737,7 +733,7 @@ describe("AsyncBinaryPlusReducerTree", function () {
 		const sleep = (n: number) => clock.sleep(Math.random() * n)
 
 		const storage = new TestAsyncKeyValueStorage(() => sleep(5))
-		const tree = new AsyncBinaryPlusReducerTree(storage, 3, 6, count)
+		const tree = new AsyncReducerTree(storage, 3, 6, count)
 
 		const size = 5000
 		const numbers = randomInts(size)
@@ -810,7 +806,7 @@ describe("AsyncBinaryPlusReducerTree", function () {
 		this.timeout(20_000)
 
 		const countTest =
-			(tree: AsyncBinaryPlusReducerTree, min: number, max: number) =>
+			(tree: AsyncReducerTree, min: number, max: number) =>
 			async (
 				args: {
 					gt?: number
@@ -835,12 +831,7 @@ describe("AsyncBinaryPlusReducerTree", function () {
 				[50, 100],
 			]) {
 				const storage = new TestAsyncKeyValueStorage()
-				const tree = new AsyncBinaryPlusReducerTree(
-					storage,
-					minSize,
-					maxSize,
-					count
-				)
+				const tree = new AsyncReducerTree(storage, minSize, maxSize, count)
 				for (const { key, value } of await listEvens(0, 1998)())
 					await tree.set(key, value)
 
@@ -953,7 +944,7 @@ describe("AsyncBinaryPlusReducerTree", function () {
 
 		it("property tests", async () => {
 			const storage = new TestAsyncKeyValueStorage()
-			const tree = new AsyncBinaryPlusReducerTree(storage, 3, 9, count)
+			const tree = new AsyncReducerTree(storage, 3, 9, count)
 
 			const min = 0
 			const max = 400
@@ -976,7 +967,7 @@ describe("AsyncBinaryPlusReducerTree", function () {
 
 		it("smaller property tests", async () => {
 			const storage = new TestAsyncKeyValueStorage()
-			const tree = new AsyncBinaryPlusReducerTree(storage, 3, 9, count)
+			const tree = new AsyncReducerTree(storage, 3, 9, count)
 
 			const min = 0
 			const max = 100
@@ -1020,7 +1011,7 @@ describe("AsyncBinaryPlusReducerTree", function () {
 			tuples = uniqWith(tuples, (a, b) => jsonCodec.compare(a, b) === 0)
 
 			const storage = new TestAsyncKeyValueStorage()
-			const tree = new AsyncBinaryPlusReducerTree(
+			const tree = new AsyncReducerTree(
 				storage,
 				3,
 				9,
@@ -1196,7 +1187,7 @@ function parseTests(str: string) {
 	})
 }
 
-async function test(tree: AsyncBinaryPlusReducerTree, str: string) {
+async function test(tree: AsyncReducerTree, str: string) {
 	for (const test of parseTests(structuralTests24)) {
 		let label = `${test.op} ${test.n}`
 		if (test.comment) label += " // " + test.comment
@@ -1283,7 +1274,7 @@ async function inspect(storage: TestAsyncKeyValueStorage) {
 }
 
 // Verify structure, node sizes, and make sure we're cleaning up.
-async function verify(tree: AsyncBinaryPlusReducerTree, id = "root") {
+async function verify(tree: AsyncReducerTree, id = "root") {
 	const node = await tree.storage.get(id)
 	if (id === "root") {
 		const storage = tree.storage as TestAsyncKeyValueStorage
@@ -1355,11 +1346,11 @@ async function countNodes(storage: TestAsyncKeyValueStorage, id = "root") {
 	return count
 }
 
-function cloneTree<K, V>(tree: AsyncBinaryPlusReducerTree<K, V>) {
+function cloneTree<K, V>(tree: AsyncReducerTree<K, V>) {
 	const oldStorage = tree.storage as TestAsyncKeyValueStorage
 	const storage = new TestAsyncKeyValueStorage()
 	storage.map = cloneDeep(oldStorage.map)
-	return new AsyncBinaryPlusReducerTree<K, V>(
+	return new AsyncReducerTree<K, V>(
 		storage,
 		tree.minSize,
 		tree.maxSize,
@@ -1368,7 +1359,7 @@ function cloneTree<K, V>(tree: AsyncBinaryPlusReducerTree<K, V>) {
 	)
 }
 
-async function treeDepth(tree: AsyncBinaryPlusReducerTree) {
+async function treeDepth(tree: AsyncReducerTree) {
 	const root = await tree.storage.get("root")
 	if (!root) return 0
 	let depth = 1

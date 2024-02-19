@@ -4,10 +4,10 @@ import { jsonCodec } from "lexicodec"
 import { cloneDeep, max, min, sample, sum, uniq, uniqWith } from "lodash"
 import { describe, it } from "mocha"
 import {
-	InMemoryBinaryPlusReducerTree,
+	InMemoryReducerTree,
 	TreeReducer,
 	combineTreeReducers,
-} from "./InMemoryBinaryPlusReducerTree"
+} from "./InMemoryReducerTree"
 
 // min = 2, max = 4
 const structuralTests24 = `
@@ -230,9 +230,9 @@ const combined = combineTreeReducers({
 	max: maxValue,
 })
 
-describe("InMemoryBinaryPlusReducerTree", () => {
+describe("InMemoryReducerTree", () => {
 	describe("structural tests 2-4", () => {
-		const tree = new InMemoryBinaryPlusReducerTree(2, 4, count)
+		const tree = new InMemoryReducerTree(2, 4, count)
 		test(tree, structuralTests24)
 	})
 
@@ -252,11 +252,11 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 		const size = args.testSize
 		const numbers = randomInts(size)
 
-		const tree = new InMemoryBinaryPlusReducerTree<
-			string | number,
-			number,
-			number
-		>(args.minSize, args.maxSize, sumReducer)
+		const tree = new InMemoryReducerTree<string | number, number, number>(
+			args.minSize,
+			args.maxSize,
+			sumReducer
+		)
 		for (let i = 0; i < size; i++) {
 			const n = numbers[i]
 			it(`Set ${i} : ${n}`, () => {
@@ -308,7 +308,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 
 	it("big tree", () => {
 		const numbers = randomInts(20_000)
-		const tree = new InMemoryBinaryPlusReducerTree(3, 9, count)
+		const tree = new InMemoryReducerTree(3, 9, count)
 		for (const number of numbers) {
 			tree.set(number, number * 2)
 			assert.equal(tree.get(number), number * 2)
@@ -321,7 +321,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 	})
 
 	it("tuple keys", () => {
-		const tree = new InMemoryBinaryPlusReducerTree<any[], any>(
+		const tree = new InMemoryReducerTree<any[], any>(
 			3,
 			9,
 			count,
@@ -371,7 +371,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 				[8, 21],
 				[50, 100],
 			]) {
-				const tree = new InMemoryBinaryPlusReducerTree(minSize, maxSize, count)
+				const tree = new InMemoryReducerTree(minSize, maxSize, count)
 				for (const { key, value } of listEvens(0, 1998)()) tree.set(key, value)
 
 				const testList = listTest(tree, 0, 1998)
@@ -578,7 +578,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 		})
 
 		it("property tests", () => {
-			const tree = new InMemoryBinaryPlusReducerTree(3, 9, count)
+			const tree = new InMemoryReducerTree(3, 9, count)
 
 			const min = 0
 			const max = 400
@@ -619,7 +619,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 		})
 
 		it("smaller property tests", () => {
-			const tree = new InMemoryBinaryPlusReducerTree(3, 9, count)
+			const tree = new InMemoryReducerTree(3, 9, count)
 
 			const min = 0
 			const max = 100
@@ -673,7 +673,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 		this.timeout(20_000)
 
 		const countTest =
-			(tree: InMemoryBinaryPlusReducerTree, min: number, max: number) =>
+			(tree: InMemoryReducerTree, min: number, max: number) =>
 			(
 				args: {
 					gt?: number
@@ -697,7 +697,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 				[8, 21],
 				[50, 100],
 			]) {
-				const tree = new InMemoryBinaryPlusReducerTree(minSize, maxSize, count)
+				const tree = new InMemoryReducerTree(minSize, maxSize, count)
 				for (const { key, value } of listEvens(0, 1998)()) tree.set(key, value)
 
 				const testReduce = countTest(tree, 0, 1998)
@@ -808,7 +808,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 		})
 
 		it("property tests", () => {
-			const tree = new InMemoryBinaryPlusReducerTree(3, 9, count)
+			const tree = new InMemoryReducerTree(3, 9, count)
 
 			const min = 0
 			const max = 400
@@ -829,7 +829,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 		})
 
 		it("smaller property tests", () => {
-			const tree = new InMemoryBinaryPlusReducerTree(3, 9, count)
+			const tree = new InMemoryReducerTree(3, 9, count)
 
 			const min = 0
 			const max = 100
@@ -871,12 +871,7 @@ describe("InMemoryBinaryPlusReducerTree", () => {
 
 			tuples = uniqWith(tuples, (a, b) => jsonCodec.compare(a, b) === 0)
 
-			const tree = new InMemoryBinaryPlusReducerTree(
-				3,
-				9,
-				combined,
-				jsonCodec.compare
-			)
+			const tree = new InMemoryReducerTree(3, 9, combined, jsonCodec.compare)
 
 			// Value is the sum of the tuple components.
 			for (const tuple of tuples) tree.set(tuple, sum(tuple))
@@ -1046,8 +1041,8 @@ function parseTests(str: string) {
 	})
 }
 
-function cloneTree<K, V, D>(tree: InMemoryBinaryPlusReducerTree<K, V, D>) {
-	const cloned = new InMemoryBinaryPlusReducerTree<K, V, D>(
+function cloneTree<K, V, D>(tree: InMemoryReducerTree<K, V, D>) {
+	const cloned = new InMemoryReducerTree<K, V, D>(
 		tree.minSize,
 		tree.maxSize,
 		tree.reducer,
@@ -1057,7 +1052,7 @@ function cloneTree<K, V, D>(tree: InMemoryBinaryPlusReducerTree<K, V, D>) {
 	return cloned
 }
 
-function treeDepth(tree: InMemoryBinaryPlusReducerTree) {
+function treeDepth(tree: InMemoryReducerTree) {
 	const root = tree.nodes.get("root")
 	if (!root) return 0
 	let depth = 1
@@ -1071,7 +1066,7 @@ function treeDepth(tree: InMemoryBinaryPlusReducerTree) {
 	return depth
 }
 
-function test(tree: InMemoryBinaryPlusReducerTree, str: string) {
+function test(tree: InMemoryReducerTree, str: string) {
 	for (const test of parseTests(structuralTests24)) {
 		let label = `${test.op} ${test.n}`
 		if (test.comment) label += " // " + test.comment
@@ -1095,7 +1090,7 @@ type KeyTree =
 	| { keys: Key[]; children?: undefined }
 	| { keys: Key[]; children: KeyTree[] }
 
-function toKeyTree(tree: InMemoryBinaryPlusReducerTree, id = "root"): KeyTree {
+function toKeyTree(tree: InMemoryReducerTree, id = "root"): KeyTree {
 	const node = tree.nodes.get(id)
 	if (!node) throw new Error("Missing node!")
 
@@ -1136,7 +1131,7 @@ function print(x: any) {
 	return ""
 }
 
-function inspect(tree: InMemoryBinaryPlusReducerTree) {
+function inspect(tree: InMemoryReducerTree) {
 	const keyTree = toKeyTree(tree)
 	const layers = toTreeLayers(keyTree)
 	const str = layers
@@ -1148,7 +1143,7 @@ function inspect(tree: InMemoryBinaryPlusReducerTree) {
 }
 
 /** Check for node sizes. */
-function verify(tree: InMemoryBinaryPlusReducerTree, id = "root") {
+function verify(tree: InMemoryReducerTree, id = "root") {
 	const node = tree.nodes.get(id)
 	if (id === "root") {
 		assert.equal(countNodes(tree), tree.nodes.size)
@@ -1168,7 +1163,7 @@ function verify(tree: InMemoryBinaryPlusReducerTree, id = "root") {
 }
 
 function verifySum(
-	tree: InMemoryBinaryPlusReducerTree<any, number, number>,
+	tree: InMemoryReducerTree<any, number, number>,
 	id = "root"
 ): number {
 	const node = tree.nodes.get(id)
@@ -1202,7 +1197,7 @@ function verifySum(
 	return branchCount
 }
 
-function countNodes(tree: InMemoryBinaryPlusReducerTree, id = "root") {
+function countNodes(tree: InMemoryReducerTree, id = "root") {
 	const node = tree.nodes.get(id)
 	if (id === "root") {
 		if (!node) return 0

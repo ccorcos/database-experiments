@@ -122,7 +122,7 @@ export function combineTreeReducers<
 	return combined
 }
 
-export class AsyncBinaryPlusReducerTree<K = string | number, V = any, D = any> {
+export class AsyncReducerTree<K = string | number, V = any, D = any> {
 	/**
 	 * minSize must be less than maxSize / 2.
 	 */

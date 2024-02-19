@@ -329,6 +329,7 @@ Wrote some simple property tests just to verify they work.
 
 First, lets compare tree size performance. There's a trade-off between how big pages are and how costly a disk read is. However, it's totally possible (and likely) that the disk pages are cached in memory anyways since its likely only a MB or two or data.
 
+```sh
 ┌─────────┬──────────────┬───────────────────────┬─────────┬───────────┬─────────┐
 │ (index) │ Average Time │ Task Name             │ ops/sec │ Margin    │ Samples │
 ├─────────┼──────────────┼───────────────────────┼─────────┼───────────┼─────────┤
@@ -340,9 +341,11 @@ First, lets compare tree size performance. There's a trade-off between how big p
 │ 5       │ '002.426s'   │ 'b+level 2000-4000'   │ '0'     │ '±2.71%'  │ 2       │
 │ 6       │ '009.078s'   │ 'b+level 10000-20000' │ '0'     │ '±3.50%'  │ 2       │
 └─────────┴──────────────┴───────────────────────┴─────────┴───────────┴─────────┘
+```
 
 Considering that Postgres doesn't even merge/redistribute on deletes, it's worth trying an approach that has a really small minSize. That will add some cost for subsequent reads after deletes but maybe it's not too bad.
 
+```sh
 ┌─────────┬──────────────┬───────────────────┬─────────┬──────────┬─────────┐
 │ (index) │ Average Time │ Task Name         │ ops/sec │ Margin   │ Samples │
 ├─────────┼──────────────┼───────────────────┼─────────┼──────────┼─────────┤
@@ -361,10 +364,11 @@ Considering that Postgres doesn't even merge/redistribute on deletes, it's worth
 │ 12      │ '588.624ms'  │ 'b+level 10-400'  │ '1'     │ '±2.17%' │ 4       │
 │ 13      │ '837.142ms'  │ 'b+level 400-800' │ '1'     │ '±4.55%' │ 3       │
 └─────────┴──────────────┴───────────────────┴─────────┴──────────┴─────────┘
-
+```
 
 Seems like 1-40 is a the best. We'll use that size going forward.
 
+```sh
 ┌─────────┬──────────────┬─────────────────┬─────────┬──────────┬─────────┐
 │ (index) │ Average Time │ Task Name       │ ops/sec │ Margin   │ Samples │
 ├─────────┼──────────────┼─────────────────┼─────────┼──────────┼─────────┤
@@ -376,6 +380,7 @@ Seems like 1-40 is a the best. We'll use that size going forward.
 │ 5       │ '425.084ms'  │ 'b+level 40-80' │ '2'     │ '±2.38%' │ 5       │
 │ 6       │ '435.143ms'  │ 'b+level 1-80'  │ '2'     │ '±5.92%' │ 5       │
 └─────────┴──────────────┴─────────────────┴─────────┴──────────┴─────────┘
+```
 
 Now obviously using this b+tree is going to be slower than using SQLite or LevelDb directly. But the benefit of the b+ tree comes down the line from the reducer tree and the interval tree. The goal here is just to get some sense of it's performance and the relative trade-off.
 
@@ -383,6 +388,7 @@ Looks like the b+ tree is 1/3x slower for SQLite and 5x slower for LevelDb for c
 
 Very relevant though is that SQlite is about 20x slower than LevelDb.
 
+```sh
 ┌─────────┬──────────────┬────────────────────────────────┬─────────┬───────────┬─────────┐
 │ (index) │ Average Time │ Task Name                      │ ops/sec │ Margin    │ Samples │
 ├─────────┼──────────────┼────────────────────────────────┼─────────┼───────────┼─────────┤
@@ -396,11 +402,13 @@ Very relevant though is that SQlite is about 20x slower than LevelDb.
 │ 7       │ '013.497ms'  │ 'insert batch 10_000 level'    │ '74'    │ '±0.36%'  │ 149     │
 │ 8       │ '017.038ms'  │ 'insert batch 10_000 b+level'  │ '58'    │ '±2.31%'  │ 118     │
 └─────────┴──────────────┴────────────────────────────────┴─────────┴───────────┴─────────┘
+```
 
 Since we're usually dealing with a database already with some size, lets measure performance on a tree with 100k items already it.
 
 B+ consecutive deletes are 40x slower with SQLite, 8x slower with LevelDb. Reads are about 8x slower for both SQLite and LevelDb.
 
+```sh
 ┌─────────┬──────────────┬────────────────────────────────────────┬─────────┬───────────┬─────────┐
 │ (index) │ Average Time │ Task Name                              │ ops/sec │ Margin    │ Samples │
 ├─────────┼──────────────┼────────────────────────────────────────┼─────────┼───────────┼─────────┤
@@ -417,6 +425,7 @@ B+ consecutive deletes are 40x slower with SQLite, 8x slower with LevelDb. Reads
 │ 10      │ '007.628ms'  │ 'read 1000 from 100k level'            │ '131'   │ '±0.68%'  │ 263     │
 │ 11      │ '055.003ms'  │ 'read 1000 from 100k b+ level'         │ '18'    │ '±0.60%'  │ 37      │
 └─────────┴──────────────┴────────────────────────────────────────┴─────────┴───────────┴─────────┘
+```
 
 Conclusions:
 - LevelDb is way faster at writes and SQLite. Deletes and reads are about the same.
@@ -426,15 +435,16 @@ Conclusions:
 
 If we stick with LevelDb, we can safely say "its about 8x slower".
 
-Idea: are there any cases where we're writing a node that hasn't actually changed?
+Idea: something to test for performance; are there any cases where we're writing a node that hasn't actually changed?
 
 ## Durable B+ Reducer Tree
 
-HERE
-- `InMemoryBinaryPlusReducerTree.ts`
-- btree-reducer-async
+- `InMemoryReducerTree.ts`
+- `AsyncReducerTree.ts`
 
 ## Durable B+ Interval Tree
+
+HERE
 - itree-sync
 - itree-async
 
