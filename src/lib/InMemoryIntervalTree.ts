@@ -44,32 +44,33 @@ export class InMemoryIntervalTree<
 		super(minSize, maxSize, reducer, compareKey)
 	}
 
-	private boundsOverlap(a: [B, B], b: [B, B]) {
-		const [min, max] = a
+	private boundsOverlap(args: { gt?: B; gte?: B; lt?: B; lte?: B }, b: [B, B]) {
 		const [start, end] = b
 
-		// return max >= start && min <= end
-		return (
-			this.compareBound(max, start) >= 0 && this.compareBound(min, end) <= 0
-		)
+		if (args.gt !== undefined) {
+			if (this.compareBound(end, args.gt) <= 0) return false
+		} else if (args.gte !== undefined) {
+			if (this.compareBound(end, args.gte) < 0) return false
+		}
+
+		if (args.lt !== undefined) {
+			if (this.compareBound(start, args.lt) >= 0) return false
+		} else if (args.lte !== undefined) {
+			if (this.compareBound(start, args.lte) > 0) return false
+		}
+
+		return true
 	}
 
-	overlaps(args: { gt?: B; gte?: B; lt?: B; lte?: B }) {
+	overlaps(args: { gt?: B; gte?: B; lt?: B; lte?: B } = {}) {
 		const root = this.nodes.get("root")
 
 		if (!root) return []
 
-		// Fix this later.
-		const start = args.gt !== undefined ? args.gt : args.gte
-		const end = args.lt !== undefined ? args.lt : args.lte
-
-		if (start === undefined) throw new Error("No start")
-		if (end === undefined) throw new Error("No end")
-
 		if (root.leaf) {
 			return root.values.filter((item) => {
 				const [min, max] = item.key
-				return this.boundsOverlap([start, end], [min, max])
+				return this.boundsOverlap(args, [min, max])
 			})
 		}
 
@@ -77,7 +78,7 @@ export class InMemoryIntervalTree<
 			// No results.
 			const [min, max] = root.data
 
-			if (!this.boundsOverlap([start, end], [min, max])) {
+			if (!this.boundsOverlap(args, [min, max])) {
 				return []
 			}
 		}
@@ -90,7 +91,7 @@ export class InMemoryIntervalTree<
 			for (const node of layer) {
 				for (const child of node.children) {
 					const [min, max] = child.data
-					if (this.boundsOverlap([start, end], [min, max])) {
+					if (this.boundsOverlap(args, [min, max])) {
 						nextLayerIds.push(child.childId)
 					}
 				}
@@ -117,7 +118,7 @@ export class InMemoryIntervalTree<
 			for (const leaf of leaves) {
 				for (const item of leaf.values) {
 					const [min, max] = item.key
-					if (this.boundsOverlap([start, end], [min, max])) {
+					if (this.boundsOverlap(args, [min, max])) {
 						result.push(item)
 					}
 				}
