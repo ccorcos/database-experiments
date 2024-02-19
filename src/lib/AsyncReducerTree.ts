@@ -580,7 +580,7 @@ export class AsyncReducerTree<K = string | number, V = any, D = any> {
 			if (start !== undefined && end !== undefined) {
 				const comp = this.compareKey(start, end)
 				if (comp > 0) {
-					throw new Error("Invalid bounds.")
+					throw new Error(`Invalid bounds ${start} > ${end}`)
 				}
 				if (comp === 0 && (startOpen || endOpen)) {
 					throw new Error("Invalid open bounds.")

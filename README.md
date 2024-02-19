@@ -444,17 +444,31 @@ Idea: something to test for performance; are there any cases where we're writing
 
 ## Durable B+ Interval Tree
 
-HERE
-- itree-sync
-- itree-async
+- `InMemoryIntervalTree.ts`
+- `AsyncIntervalTree.ts`
 
 ## Performance Testing - Round 3
 
-- sqlite query vs reducer tree
-- sqlite query vs interval tree
+After putting 2000 numbers in a table, compute the sum of various ranges across those numbers.
+
+```sh
+┌─────────┬──────────────┬────────────────────────────┬──────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name                  │ ops/sec  │ Margin   │ Samples │
+├─────────┼──────────────┼────────────────────────────┼──────────┼──────────┼─────────┤
+│ 0       │ '099.692μs'  │ 'b+reducer on leveldb sum' │ '10,030' │ '±0.35%' │ 20062   │
+│ 1       │ '254.870μs'  │ 'sqlite sum'               │ '3,923'  │ '±0.38%' │ 7848    │
+└─────────┴──────────────┴────────────────────────────┴──────────┴──────────┴─────────┘
+```
 
 
-better reducer property test.
+
+
+- sqlite count vs reducer tree
+- sqlite overlaps vs interval tree
+
+
+
+
 
 
 prolly tree just for fun? prolly not.

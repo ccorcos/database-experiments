@@ -13,7 +13,8 @@
 		"test": "mocha -r tsx './src/**/*.test.ts' --verbose",
 		"release": "./release.sh",
 		"perf": "tsx src/performance.ts",
-		"perf2": "tsx src/performance2.ts"
+		"perf2": "tsx src/performance2.ts",
+		"perf3": "tsx src/performance3.ts"
 	},
 	"keywords": [],
 	"author": "Chet Corcos <ccorcos@gmail.com>",
