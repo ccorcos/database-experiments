@@ -6,6 +6,7 @@ import { max, min, sample, sum, uniq } from "lodash"
 import Bench from "tinybench"
 import { AsyncIntervalTree } from "./lib/AsyncIntervalTree"
 import { AsyncReducerTree, TreeReducer } from "./lib/AsyncReducerTree"
+import { InMemoryIntervalTree } from "./lib/InMemoryIntervalTree"
 import { printTable } from "./perfTools"
 import { LevelDbKeyValueStorage } from "./storage/LevelDbKeyValueStorage"
 
@@ -425,7 +426,9 @@ async function test3() {
 // sh build-sqlite.sh
 async function test4() {
 	let tree: AsyncIntervalTree<[string, string, string], number>
+	let tree2: InMemoryIntervalTree<[string, string, string], number>
 	let db: Database
+	let db2: Database
 
 	const startMs = Date.now()
 	const durationMs = 20 * DecadeMs
@@ -451,8 +454,16 @@ async function test4() {
 	}
 
 	{
-		// CREATE VIRTUAL TABLE <name> USING rtree(<column-names>);
+		tree2 = new InMemoryIntervalTree(
+			1,
+			40,
+			jsonCodec.compare,
+			jsonCodec.compare
+		)
+		await tree.write({ set: items })
+	}
 
+	{
 		db = sqlite(tmp("data.sqlite"))
 		db.prepare(
 			`create table data ( id text primary key, lower int, upper int, value int)`
@@ -481,6 +492,41 @@ async function test4() {
 		writeQuery({ set: items })
 	}
 
+	{
+		// CREATE VIRTUAL TABLE <name> USING rtree(<column-names>);
+
+		db2 = sqlite(":memory:")
+		db2
+			.prepare(
+				`create table data ( id text primary key, lower int, upper int, value int)`
+			)
+			.run()
+
+		db2
+			.prepare(
+				`create virtual table data_ranges using rtree ( id, lower, upper )`
+			)
+			.run()
+
+		const insertQuery = db2.prepare(
+			`insert or replace into data values ($id, strftime('%s', $lower), strftime('%s', $upper), $value)`
+		)
+		const writeQuery = db2.transaction(
+			(tx: { set?: { key: [string, string, string]; value: number }[] }) => {
+				for (const {
+					key: [lower, upper, id],
+					value,
+				} of tx.set || []) {
+					insertQuery.run({ lower, upper, id, value })
+				}
+			}
+		)
+
+		// console.log(db.prepare("PRAGMA compile_options").all())
+
+		writeQuery({ set: items })
+	}
+
 	let sampled: typeof ranges
 	const bench = new Bench({
 		time: 2000,
@@ -493,23 +539,34 @@ async function test4() {
 		},
 	})
 
+	bench.add(`parasitic calendar interval tree in memory`, async () => {
+		for (const [gte, lte] of sampled) tree2.overlaps({ gte, lte })
+	})
+
 	bench.add(`parasitic calendar interval tree on leveldb`, async () => {
 		for (const [gte, lte] of sampled) await tree.overlaps({ gte, lte })
 	})
 
 	bench.add(`parasitic calendar sqlite rtree overlaps`, async () => {
-		try {
-			const overlapsQuery = db.prepare(
-				`
+		const overlapsQuery = db.prepare(
+			`
 				select id from data_ranges
 				where upper >= $gte
 				and lower <= $lte
 				`
-			)
-			for (const [gte, lte] of sampled) overlapsQuery.all({ gte, lte })
-		} catch (e) {
-			console.error(e)
-		}
+		)
+		for (const [gte, lte] of sampled) overlapsQuery.all({ gte, lte })
+	})
+
+	bench.add(`parasitic calendar sqlite rtree overlaps in memory`, async () => {
+		const overlapsQuery = db2.prepare(
+			`
+				select id from data_ranges
+				where upper >= $gte
+				and lower <= $lte
+				`
+		)
+		for (const [gte, lte] of sampled) overlapsQuery.all({ gte, lte })
 	})
 
 	await bench.warmup()

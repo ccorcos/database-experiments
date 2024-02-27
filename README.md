@@ -555,24 +555,22 @@ sh build-sqlite.sh
 
 Here we go... way faster! And I think that's expected. The btree is using JavaScript and needs to do a bunch of serialization. But at least we have some idea of how much improvement we can get from using a different language: ~30x.
 
+The good news is that the in-memory tree is still wicked fast – faster than SQLite in-memory. Probably because SQLite has the serialization cost in this case.
 
 ```sh
-┌─────────┬──────────────┬───────────────────────────────────────────────┬─────────┬──────────┬─────────┐
-│ (index) │ Average Time │ Task Name                                     │ ops/sec │ Margin   │ Samples │
-├─────────┼──────────────┼───────────────────────────────────────────────┼─────────┼──────────┼─────────┤
-│ 0       │ '170.084ms'  │ 'parasitic calendar interval tree on leveldb' │ '5'     │ '±3.61%' │ 12      │
-│ 1       │ '006.208ms'  │ 'parasitic calendar sqlite rtree overlaps'    │ '161'   │ '±0.18%' │ 323     │
-└─────────┴──────────────┴───────────────────────────────────────────────┴─────────┴──────────┴─────────┘
+┌─────────┬──────────────┬──────────────────────────────────────────────────────┬──────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name                                            │ ops/sec  │ Margin   │ Samples │
+├─────────┼──────────────┼──────────────────────────────────────────────────────┼──────────┼──────────┼─────────┤
+│ 0       │ '015.617μs'  │ 'parasitic calendar interval tree in memory'         │ '64,032' │ '±0.50%' │ 128066  │
+│ 1       │ '169.280ms'  │ 'parasitic calendar interval tree on leveldb'        │ '5'      │ '±1.66%' │ 12      │
+│ 2       │ '006.252ms'  │ 'parasitic calendar sqlite rtree overlaps'           │ '159'    │ '±0.31%' │ 320     │
+│ 3       │ '001.317ms'  │ 'parasitic calendar sqlite rtree overlaps in memory' │ '759'    │ '±0.23%' │ 1519    │
+└─────────┴──────────────┴──────────────────────────────────────────────────────┴──────────┴──────────┴─────────┘
 ```
 
 
+
 ---
-
-
-- [ ]  Start over with a contacts app. Schema and UI. Introduce users, auth, and permission later.
-
-
-
 
 
 prolly tree just for fun? prolly not.
@@ -586,6 +584,7 @@ minisql with tuple encoding on leveldb... more like a filing cabinet. using data
 - select from index
 
 Demos...
+- Start over with a contacts app. Schema and UI. Introduce users, auth, and permission later.
 - Messaging app (Slack)
 - Social network app (Twitter)
 - Contacts app  (Database)
