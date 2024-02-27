@@ -451,6 +451,8 @@ Idea: something to test for performance; are there any cases where we're writing
 
 After putting 2000 numbers in a table, compute the sum of various ranges across those numbers.
 
+SQLite is O(n) and b+ tree is O(log n).
+
 ```sh
 ┌─────────┬──────────────┬────────────────────────────┬──────────┬──────────┬─────────┐
 │ (index) │ Average Time │ Task Name                  │ ops/sec  │ Margin   │ Samples │
@@ -460,8 +462,10 @@ After putting 2000 numbers in a table, compute the sum of various ranges across 
 └─────────┴──────────────┴────────────────────────────┴──────────┴──────────┴─────────┘
 ```
 
+Now let's try the interval tree. For 20,000 completely random ranges in the database, then overlaps is faster on SQLite because we aren't able to effectively trim nodes from the interval tree.
 
-For 20,000 completely random ranges, then overlaps is faster on SQLite because we aren't able to effectively trim nodes from the interval tree. Imagine a calendar, for example, where all events have a random start and end date. That's not a realistic distribution.
+Since the ranges are random, then odds are that in every leaf node is a range that spans the rest of the tree! This means we'll get the same big-O performance of the SQLite btree index!
+
 ```sh
 ┌─────────┬──────────────┬──────────────────────────────────────────┬─────────┬──────────┬─────────┐
 │ (index) │ Average Time │ Task Name                                │ ops/sec │ Margin   │ Samples │
@@ -471,6 +475,11 @@ For 20,000 completely random ranges, then overlaps is faster on SQLite because w
 └─────────┴──────────────┴──────────────────────────────────────────┴─────────┴──────────┴─────────┘
 ```
 
+Imagine a calendar, though, with all events having a random start and end date. That's not a realistic distribution.
+
+So let's imagine smaller ranges. Rather than randomly sample from the entire range, we'll sample a "duration" that's only 5% of the range.
+
+In the worst case, we'll still have to fetch several leaf nodes though. For example, we're using a tree width of 40, and 40/20000 = 0.002. So we're going to have to fetch 0.05/0.002 = 25 leaf nodes just to find overlaps with a single point.
 
 ```sh
 ┌─────────┬──────────────┬────────────────────────────────────────────────────┬─────────┬──────────┬─────────┐
@@ -481,6 +490,8 @@ For 20,000 completely random ranges, then overlaps is faster on SQLite because w
 └─────────┴──────────────┴────────────────────────────────────────────────────┴─────────┴──────────┴─────────┘
 ```
 
+Dropping the size of the range leads to better perf over time compared to the SQLite scan.
+
 ```sh
 ┌─────────┬──────────────┬─────────────────────────────────────────────────────┬─────────┬──────────┬─────────┐
 │ (index) │ Average Time │ Task Name                                           │ ops/sec │ Margin   │ Samples │
@@ -490,8 +501,7 @@ For 20,000 completely random ranges, then overlaps is faster on SQLite because w
 └─────────┴──────────────┴─────────────────────────────────────────────────────┴─────────┴──────────┴─────────┘
 ```
 
-
-Realistic calendar view...
+Let's consider a more realistic calendar view...
 
 2 decades of data:
 - 5-15x 15min-3hr long meetings / week
@@ -511,14 +521,12 @@ Approximately 10k events and 8784 queries.
 └─────────┴──────────────┴─────────────────────────────────────┴─────────┴──────────┴─────────┘
 ```
 
-
 Lets try 20 decades to simulate having many more users.
 100k events, 87624 ranges. But we're going to sample 1000 ranges at a time.
 
-
 Ok, now we're ~20x faster than SQLite.
 
-```ts
+```sh
 ┌─────────┬──────────────┬─────────────────────────────────────┬─────────┬──────────┬─────────┐
 │ (index) │ Average Time │ Task Name                           │ ops/sec │ Margin   │ Samples │
 ├─────────┼──────────────┼─────────────────────────────────────┼─────────┼──────────┼─────────┤
@@ -527,14 +535,41 @@ Ok, now we're ~20x faster than SQLite.
 └─────────┴──────────────┴─────────────────────────────────────┴─────────┴──────────┴─────────┘
 ```
 
+Lets do the same thing but add a "parasitic event" that spans the entire range duration. This will force SQlite to do a O(n) full table scan, but the interval tree in the best case is just O(2*log n).
 
-TODO: explain the perf tests above.
+```sh
+┌─────────┬──────────────┬───────────────────────────────────────────────┬─────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name                                     │ ops/sec │ Margin   │ Samples │
+├─────────┼──────────────┼───────────────────────────────────────────────┼─────────┼──────────┼─────────┤
+│ 0       │ '164.021ms'  │ 'parasitic calendar interval tree on leveldb' │ '6'     │ '±2.18%' │ 13      │
+│ 1       │ '002.334s'   │ 'parasitic calendar sqlite overlaps'          │ '0'     │ '±1.60%' │ 10      │
+└─────────┴──────────────┴───────────────────────────────────────────────┴─────────┴──────────┴─────────┘
+```
 
-TODO: compare with SQLite rtree index.
+Let's [compile SQLite](https://github.com/WiseLibs/better-sqlite3/blob/60763a0742690c8bae1db43d838f418cfc83b656/docs/compilation.md) with the [R*Tree extension](https://www.sqlite.org/rtree.html) just for another point of comparison.
 
+```sh
+npm uninstall better-sqlite3
+sh build-sqlite.sh
+```
+
+Here we go... way faster! And I think that's expected. The btree is using JavaScript and needs to do a bunch of serialization. But at least we have some idea of how much improvement we can get from using a different language: ~30x.
+
+
+```sh
+┌─────────┬──────────────┬───────────────────────────────────────────────┬─────────┬──────────┬─────────┐
+│ (index) │ Average Time │ Task Name                                     │ ops/sec │ Margin   │ Samples │
+├─────────┼──────────────┼───────────────────────────────────────────────┼─────────┼──────────┼─────────┤
+│ 0       │ '170.084ms'  │ 'parasitic calendar interval tree on leveldb' │ '5'     │ '±3.61%' │ 12      │
+│ 1       │ '006.208ms'  │ 'parasitic calendar sqlite rtree overlaps'    │ '161'   │ '±0.18%' │ 323     │
+└─────────┴──────────────┴───────────────────────────────────────────────┴─────────┴──────────┴─────────┘
+```
 
 
 ---
+
+
+- [ ]  Start over with a contacts app. Schema and UI. Introduce users, auth, and permission later.
 
 
 

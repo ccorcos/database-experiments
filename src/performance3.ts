@@ -11,7 +11,7 @@ import { LevelDbKeyValueStorage } from "./storage/LevelDbKeyValueStorage"
 
 let now = Date.now()
 function tmp(fileName: string) {
-	const dirPath = __dirname + "../tmp/" + now++
+	const dirPath = __dirname + "/../tmp/" + now++
 	fs.mkdirpSync(dirPath)
 	return dirPath + "/" + fileName
 }
@@ -338,116 +338,59 @@ async function test3() {
 	// Lets try something a little more grounded.
 	let tree: AsyncIntervalTree<[string, string, string], number>
 	let db: Database
-	let ranges: [string, string][] = []
 
-	const items: { key: [string, string, string]; value: number }[] = []
+	const startMs = Date.now()
+	const durationMs = 20 * DecadeMs
+	var { items, ranges } = createCalendarData(startMs, durationMs)
 
-	const now = Date.now()
-
-	const SecondMs = 1000
-	const MinuteMs = SecondMs * 60
-	const HourMs = MinuteMs * 60
-	const DayMs = HourMs * 24
-	const YearMs = DayMs * 365
-	const DecadeMs = YearMs * 10
-
-	const CalendarSizeMs = 20 * DecadeMs
-
-	// 5-15x 15min-3hr long meetings / week
-	const WeekMs = DayMs * 7
-	for (let i = 0; i < CalendarSizeMs; i += WeekMs) {
-		for (let j = 0; j < randomInt([5, 15]); j++) {
-			const duration = randomInt([HourMs / 4, HourMs * 3])
-			const start = i + randomInt([0, WeekMs])
-			const min = new Date(now + start).toISOString()
-			const max = new Date(now + start + duration).toISOString()
-			items.push({ key: [min, max, randomId()], value: i * j })
-		}
+	// Add a parasitic event that spans the entire length.
+	{
+		const min = new Date(startMs).toISOString()
+		const max = new Date(startMs + durationMs).toISOString()
+		items.push({ key: [min, max, randomId()], value: -1 })
 	}
 
-	// 3-12x 1day-4day events per month.
-	const MonthMs = DayMs * 30
-	for (let i = 0; i < CalendarSizeMs; i += MonthMs) {
-		for (let j = 0; j < randomInt([5, 15]); j++) {
-			const duration = randomInt([DayMs, DayMs * 4])
-			const start = i + randomInt([0, MonthMs])
-			const min = new Date(now + start).toISOString()
-			const max = new Date(now + start + duration).toISOString()
-			items.push({ key: [min, max, randomId()], value: i * j })
-		}
+	{
+		const storage = new LevelDbKeyValueStorage(new Level(tmp("data.leveldb")))
+		tree = new AsyncIntervalTree(
+			storage,
+			1,
+			40,
+			jsonCodec.compare,
+			jsonCodec.compare
+		)
+		await tree.write({ set: items })
 	}
 
-	// 2-5x 5day-20day events per year.
-	for (let i = 0; i < CalendarSizeMs; i += YearMs) {
-		for (let j = 0; j < randomInt([2, 5]); j++) {
-			const duration = randomInt([DayMs * 5, DayMs * 20])
-			const start = i + randomInt([0, YearMs])
-			const min = new Date(now + start).toISOString()
-			const max = new Date(now + start + duration).toISOString()
-			items.push({ key: [min, max, randomId()], value: i * j })
-		}
-	}
-
-	// Query for every month in the decade
-	for (let i = 0; i < CalendarSizeMs; i += MonthMs) {
-		// Every day view
-		for (let j = 0; j < MonthMs; j += DayMs) {
-			const min = new Date(now + i + j).toISOString()
-			const max = new Date(now + i + j + DayMs).toISOString()
-			ranges.push([min, max])
-		}
-
-		for (let j = 0; j < MonthMs; j += WeekMs) {
-			// Every view
-			const min = new Date(now + i + j).toISOString()
-			const max = new Date(now + i + j + WeekMs).toISOString()
-			ranges.push([min, max])
-		}
-
-		{
-			// Month view
-			const min = new Date(now + i).toISOString()
-			const max = new Date(now + i + WeekMs).toISOString()
-			ranges.push([min, max])
-		}
-	}
-
-	console.log("items", items.length)
-	console.log("ranges", ranges.length)
-
-	const storage = new LevelDbKeyValueStorage(new Level(tmp("data.leveldb")))
-	tree = new AsyncIntervalTree(
-		storage,
-		1,
-		40,
-		jsonCodec.compare,
-		jsonCodec.compare
-	)
-	await tree.write({ set: items })
-
-	db = sqlite(tmp("data.sqlite"))
-	const createTableQuery = db.prepare(
-		`create table data ( id text primary key, lower text, upper text, value int)`
-	)
-	createTableQuery.run()
-	const createIndexQuery = db.prepare(
-		`create index idx_data on data ( lower, upper, id )`
-	)
-	createIndexQuery.run()
-	const insertQuery = db.prepare(
-		`insert or replace into data values ($id, $lower, $upper, $value)`
-	)
-	const writeQuery = db.transaction(
-		(tx: { set?: { key: [string, string, string]; value: number }[] }) => {
-			for (const {
-				key: [lower, upper, id],
-				value,
-			} of tx.set || []) {
-				insertQuery.run({ lower, upper, id, value })
+	{
+		db = sqlite(tmp("data.sqlite"))
+		const createTableQuery = db.prepare(
+			`create table data ( id text primary key, lower text, upper text, value int)`
+		)
+		createTableQuery.run()
+		const createIndexQuery = db.prepare(
+			`create index idx_data on data ( lower, upper, id )`
+		)
+		createIndexQuery.run()
+		const insertQuery = db.prepare(
+			`insert or replace into data values ($id, $lower, $upper, $value)`
+		)
+		const writeQuery = db.transaction(
+			(tx: { set?: { key: [string, string, string]; value: number }[] }) => {
+				for (const {
+					key: [lower, upper, id],
+					value,
+				} of tx.set || []) {
+					insertQuery.run({ lower, upper, id, value })
+				}
 			}
-		}
-	)
-	writeQuery({ set: items })
+		)
+
+		console.log("HERE", db.prepare("PRAGMA compile_options").all())
+		// SQLITE_ENABLE_RTREE
+		throw new Error("HERE")
+		writeQuery({ set: items })
+	}
 
 	let sampled: typeof ranges
 	const bench = new Bench({
@@ -461,11 +404,11 @@ async function test3() {
 		},
 	})
 
-	bench.add(`calendar interval tree on leveldb`, async () => {
+	bench.add(`parasitic calendar interval tree on leveldb`, async () => {
 		for (const [gte, lte] of sampled) await tree.overlaps({ gte, lte })
 	})
 
-	bench.add(`calendar sqlite overlaps`, async () => {
+	bench.add(`parasitic calendar sqlite overlaps`, async () => {
 		const overlapsQuery = db.prepare(
 			`select id from data where upper >= $gte and lower <= $lte`
 		)
@@ -476,6 +419,178 @@ async function test3() {
 	await bench.run()
 
 	printTable(bench)
+}
+
+// npm uninstall better-sqlite3
+// sh build-sqlite.sh
+async function test4() {
+	let tree: AsyncIntervalTree<[string, string, string], number>
+	let db: Database
+
+	const startMs = Date.now()
+	const durationMs = 20 * DecadeMs
+	var { items, ranges } = createCalendarData(startMs, durationMs)
+
+	// Add a parasitic event that spans the entire length.
+	{
+		const min = new Date(startMs).toISOString()
+		const max = new Date(startMs + durationMs).toISOString()
+		items.push({ key: [min, max, randomId()], value: -1 })
+	}
+
+	{
+		const storage = new LevelDbKeyValueStorage(new Level(tmp("data.leveldb")))
+		tree = new AsyncIntervalTree(
+			storage,
+			1,
+			40,
+			jsonCodec.compare,
+			jsonCodec.compare
+		)
+		await tree.write({ set: items })
+	}
+
+	{
+		// CREATE VIRTUAL TABLE <name> USING rtree(<column-names>);
+
+		db = sqlite(tmp("data.sqlite"))
+		db.prepare(
+			`create table data ( id text primary key, lower int, upper int, value int)`
+		).run()
+
+		db.prepare(
+			`create virtual table data_ranges using rtree ( id, lower, upper )`
+		).run()
+
+		const insertQuery = db.prepare(
+			`insert or replace into data values ($id, strftime('%s', $lower), strftime('%s', $upper), $value)`
+		)
+		const writeQuery = db.transaction(
+			(tx: { set?: { key: [string, string, string]; value: number }[] }) => {
+				for (const {
+					key: [lower, upper, id],
+					value,
+				} of tx.set || []) {
+					insertQuery.run({ lower, upper, id, value })
+				}
+			}
+		)
+
+		// console.log(db.prepare("PRAGMA compile_options").all())
+
+		writeQuery({ set: items })
+	}
+
+	let sampled: typeof ranges
+	const bench = new Bench({
+		time: 2000,
+		iterations: 10,
+		setup: async () => {
+			console.log("sample")
+			sampled = Array(1000)
+				.fill(0)
+				.map(() => sample(ranges)!)
+		},
+	})
+
+	bench.add(`parasitic calendar interval tree on leveldb`, async () => {
+		for (const [gte, lte] of sampled) await tree.overlaps({ gte, lte })
+	})
+
+	bench.add(`parasitic calendar sqlite rtree overlaps`, async () => {
+		try {
+			const overlapsQuery = db.prepare(
+				`
+				select id from data_ranges
+				where upper >= $gte
+				and lower <= $lte
+				`
+			)
+			for (const [gte, lte] of sampled) overlapsQuery.all({ gte, lte })
+		} catch (e) {
+			console.error(e)
+		}
+	})
+
+	await bench.warmup()
+	await bench.run()
+
+	printTable(bench)
+}
+
+const SecondMs = 1000
+const MinuteMs = SecondMs * 60
+const HourMs = MinuteMs * 60
+const DayMs = HourMs * 24
+const YearMs = DayMs * 365
+const DecadeMs = YearMs * 10
+
+function createCalendarData(startMs: number, durationMs: number) {
+	let ranges: [string, string][] = []
+	const items: { key: [string, string, string]; value: number }[] = []
+
+	// 5-15x 15min-3hr long meetings / week
+	const WeekMs = DayMs * 7
+	for (let i = 0; i < durationMs; i += WeekMs) {
+		for (let j = 0; j < randomInt([5, 15]); j++) {
+			const duration = randomInt([HourMs / 4, HourMs * 3])
+			const start = i + randomInt([0, WeekMs])
+			const min = new Date(startMs + start).toISOString()
+			const max = new Date(startMs + start + duration).toISOString()
+			items.push({ key: [min, max, randomId()], value: i * j })
+		}
+	}
+
+	// 3-12x 1day-4day events per month.
+	const MonthMs = DayMs * 30
+	for (let i = 0; i < durationMs; i += MonthMs) {
+		for (let j = 0; j < randomInt([5, 15]); j++) {
+			const duration = randomInt([DayMs, DayMs * 4])
+			const start = i + randomInt([0, MonthMs])
+			const min = new Date(startMs + start).toISOString()
+			const max = new Date(startMs + start + duration).toISOString()
+			items.push({ key: [min, max, randomId()], value: i * j })
+		}
+	}
+
+	// 2-5x 5day-20day events per year.
+	for (let i = 0; i < durationMs; i += YearMs) {
+		for (let j = 0; j < randomInt([2, 5]); j++) {
+			const duration = randomInt([DayMs * 5, DayMs * 20])
+			const start = i + randomInt([0, YearMs])
+			const min = new Date(startMs + start).toISOString()
+			const max = new Date(startMs + start + duration).toISOString()
+			items.push({ key: [min, max, randomId()], value: i * j })
+		}
+	}
+
+	// Query for every month in the decade
+	for (let i = 0; i < durationMs; i += MonthMs) {
+		// Every day view
+		for (let j = 0; j < MonthMs; j += DayMs) {
+			const min = new Date(startMs + i + j).toISOString()
+			const max = new Date(startMs + i + j + DayMs).toISOString()
+			ranges.push([min, max])
+		}
+
+		for (let j = 0; j < MonthMs; j += WeekMs) {
+			// Every view
+			const min = new Date(startMs + i + j).toISOString()
+			const max = new Date(startMs + i + j + WeekMs).toISOString()
+			ranges.push([min, max])
+		}
+
+		{
+			// Month view
+			const min = new Date(startMs + i).toISOString()
+			const max = new Date(startMs + i + WeekMs).toISOString()
+			ranges.push([min, max])
+		}
+	}
+
+	console.log("items", items.length)
+	console.log("ranges", ranges.length)
+	return { items, ranges }
 }
 
 function randomId() {
@@ -501,4 +616,4 @@ function randomInts(size: number, range?: [number, number]) {
 	return uniq(randomNumbers(size, range).map((n) => Math.round(n)))
 }
 
-test3()
+test4()
