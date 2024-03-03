@@ -35,6 +35,7 @@
 		"@ccorcos/ordered-array": "^0.0.4",
 		"abstract-leveldown": "^7.2.0",
 		"better-sqlite3": "^9.4.0",
+		"data-type-ts": "^1.0.3",
 		"fake-indexeddb": "^5.0.2",
 		"fs-extra": "^11.2.0",
 		"idb": "^8.0.0",

@@ -569,24 +569,17 @@ The good news is that the in-memory tree is still wicked fast – faster than SQ
 ```
 
 
+Generator yield types coming soon!
+https://github.com/microsoft/TypeScript/issues/36967
 
 ---
 
-
-prolly tree just for fun? prolly not.
-
-- sqlite vs tuple bptree
-
 minisql with tuple encoding on leveldb... more like a filing cabinet. using data-type-ts for schema.
-- create table
-- create index on table
-- insert into table
-- select from index
 
 Demos...
 - Start over with a contacts app. Schema and UI. Introduce users, auth, and permission later.
 - Messaging app (Slack)
 - Social network app (Twitter)
 - Contacts app  (Database)
-- Generalized Database
+- Generalized Database (Airtable)
 - Filing Cabinets
