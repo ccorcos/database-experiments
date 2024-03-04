@@ -1,3 +1,4 @@
+import { insert, remove } from "@ccorcos/ordered-array"
 import { jsonCodec } from "lexicodec"
 import { InMemoryBinaryPlusTree } from "../lib/InMemoryBinaryPlusTree"
 import { InMemoryIntervalTree } from "../lib/InMemoryIntervalTree"
@@ -26,7 +27,7 @@ export class BTreeDb<K = any, V = any> {
 		return this.data.get(key)
 	}
 
-	list = (
+	list(
 		args: {
 			gt?: K
 			gte?: K
@@ -35,7 +36,7 @@ export class BTreeDb<K = any, V = any> {
 			limit?: number
 			reverse?: boolean
 		} = {}
-	) => {
+	) {
 		return this.data.list(args)
 	}
 
@@ -99,6 +100,45 @@ export class BTreeTx<K = any, V = any> {
 	set(key: K, value: V) {
 		this.sets.set(key, value)
 		this.deletes.delete(key)
+	}
+
+	list(
+		args: {
+			gt?: K
+			gte?: K
+			lt?: K
+			lte?: K
+			limit?: number
+			reverse?: boolean
+		} = {}
+	) {
+		const sets = this.sets.list(args)
+		const deletes = this.deletes.list(args)
+
+		const limit =
+			args.limit !== undefined ? args.limit + deletes.length : undefined
+
+		const result = this.db.list({ ...args, limit })
+
+		const compareKey = (a: K, b: K) => {
+			const dir = this.db.compareKey(a, b) * -1
+			if (args.reverse) return dir * -1
+			else return dir
+		}
+
+		for (const item of sets) {
+			insert(result, item, ({ key }) => key, compareKey)
+		}
+
+		for (const { key } of deletes) {
+			remove(result, key, ({ key }) => key, compareKey)
+		}
+
+		if (args.limit && result.length > args.limit) {
+			result.splice(args.limit, result.length)
+		}
+
+		return result
 	}
 
 	delete(key: K) {
