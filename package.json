@@ -42,6 +42,7 @@
 		"level": "^8.0.1",
 		"lexicodec": "^0.0.4",
 		"lodash": "^4.17.21",
+		"position-strings": "^2.0.1",
 		"ulid": "^2.3.0"
 	}
 }
