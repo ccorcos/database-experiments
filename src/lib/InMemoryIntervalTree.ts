@@ -8,7 +8,7 @@ import {
 export class InMemoryIntervalTree<
 	K extends [B, B, ...any[]],
 	V = any,
-	B = any
+	B = any,
 > extends InMemoryReducerTree<K, V, [B, B]> {
 	constructor(
 		public minSize: number,
@@ -77,7 +77,6 @@ export class InMemoryIntervalTree<
 		{
 			// No results.
 			const [min, max] = root.data
-
 			if (!this.boundsOverlap(args, [min, max])) {
 				return []
 			}
