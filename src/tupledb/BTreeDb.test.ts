@@ -20,8 +20,8 @@ describe("BTreeDb", () => {
 		let called = 0
 		db.subscribe(
 			[
-				["user", jsonCodec.MAX],
 				["user", jsonCodec.MIN],
+				["user", jsonCodec.MAX],
 			],
 			() => {
 				called += 1

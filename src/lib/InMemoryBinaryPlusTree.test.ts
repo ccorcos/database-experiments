@@ -343,6 +343,10 @@ describe("InMemoryBinaryPlusTree", () => {
 				[50, 100],
 			]) {
 				const tree = new InMemoryBinaryPlusTree(minSize, maxSize)
+
+				// Empty
+				assert.deepEqual(tree.list(), [], "empty list")
+
 				for (const { key, value } of listEvens(0, 1998)()) tree.set(key, value)
 
 				const testList = listTest(tree, 0, 1998)
@@ -673,11 +677,11 @@ function parseTests(str: string) {
 
 function cloneTree<K, V>(tree: InMemoryBinaryPlusTree<K, V>) {
 	const cloned = new InMemoryBinaryPlusTree<K, V>(
-		this.minSize,
-		this.maxSize,
-		this.compareKey
+		tree.minSize,
+		tree.maxSize,
+		tree.compareKey
 	)
-	cloned.nodes = cloneDeep(this.nodes)
+	cloned.nodes = cloneDeep(tree.nodes)
 	return cloned
 }
 

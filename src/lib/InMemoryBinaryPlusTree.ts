@@ -83,7 +83,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 		}
 	}
 
-	get = (key: K): V | undefined => {
+	get(key: K): V | undefined {
 		const { nodePath } = this.findPath(key)
 		if (nodePath.length === 0) return
 
@@ -197,7 +197,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 		}
 	}
 
-	list = (
+	list(
 		args: {
 			gt?: K
 			gte?: K
@@ -206,7 +206,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			limit?: number
 			reverse?: boolean
 		} = {}
-	) => {
+	) {
 		const results: { key: K; value: V }[] = []
 
 		if (args.gt !== undefined && args.gte !== undefined)
@@ -218,15 +218,15 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 			args.gt !== undefined
 				? args.gt
 				: args.gte !== undefined
-				? args.gte
-				: undefined
+					? args.gte
+					: undefined
 		const startOpen = args.gt !== undefined
 		const end =
 			args.lt !== undefined
 				? args.lt
 				: args.lte !== undefined
-				? args.lte
-				: undefined
+					? args.lte
+					: undefined
 		const endOpen = args.lt !== undefined
 
 		if (start !== undefined && end !== undefined) {
@@ -248,6 +248,10 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 		} else {
 			startKey = this.startCursor()
 		}
+
+		// Empty tree.
+		if (startKey.nodePath.length === 0) return []
+
 		if (end !== undefined) {
 			endKey = this.findPath(end)
 		} else {
@@ -420,7 +424,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 		return results
 	}
 
-	set = (key: K, value: V) => {
+	set(key: K, value: V) {
 		const { nodePath, indexPath } = this.findPath(key)
 
 		// Intitalize root node.
@@ -534,7 +538,7 @@ export class InMemoryBinaryPlusTree<K = string | number, V = any> {
 		}
 	}
 
-	delete = (key: K) => {
+	delete(key: K) {
 		const root = this.nodes.get("root")
 		if (!root) return
 
