@@ -31,7 +31,7 @@ export type TreeReducer<K, V, D> = {
 }
 
 export function combineTreeReducers<
-	A extends { [key: string]: TreeReducer<any, any, any> }
+	A extends { [key: string]: TreeReducer<any, any, any> },
 >(reducers: A) {
 	const combined: TreeReducer<
 		A[keyof A] extends TreeReducer<infer K, any, any> ? K : never,
@@ -119,7 +119,7 @@ export class InMemoryReducerTree<K = string | number, V = any, D = any> {
 		}
 	}
 
-	get = (key: K): V | undefined => {
+	get(key: K): V | undefined {
 		const { nodePath } = this.findPath(key)
 		if (nodePath.length === 0) return
 
@@ -237,7 +237,7 @@ export class InMemoryReducerTree<K = string | number, V = any, D = any> {
 		}
 	}
 
-	list = (
+	list(
 		args: {
 			gt?: K
 			gte?: K
@@ -246,7 +246,7 @@ export class InMemoryReducerTree<K = string | number, V = any, D = any> {
 			limit?: number
 			reverse?: boolean
 		} = {}
-	) => {
+	) {
 		const results: { key: K; value: V }[] = []
 
 		if (args.gt !== undefined && args.gte !== undefined)
@@ -258,15 +258,15 @@ export class InMemoryReducerTree<K = string | number, V = any, D = any> {
 			args.gt !== undefined
 				? args.gt
 				: args.gte !== undefined
-				? args.gte
-				: undefined
+					? args.gte
+					: undefined
 		const startOpen = args.gt !== undefined
 		const end =
 			args.lt !== undefined
 				? args.lt
 				: args.lte !== undefined
-				? args.lte
-				: undefined
+					? args.lte
+					: undefined
 		const endOpen = args.lt !== undefined
 
 		if (start !== undefined && end !== undefined) {
@@ -286,6 +286,12 @@ export class InMemoryReducerTree<K = string | number, V = any, D = any> {
 		} else {
 			startKey = this.startCursor()
 		}
+
+		// Empty tree
+		if (startKey.nodePath.length === 0) {
+			return []
+		}
+
 		if (end !== undefined) {
 			endKey = this.findPath(end)
 		} else {
@@ -458,14 +464,14 @@ export class InMemoryReducerTree<K = string | number, V = any, D = any> {
 		return results
 	}
 
-	reduce = (
+	reduce(
 		args: {
 			gt?: K
 			gte?: K
 			lt?: K
 			lte?: K
 		} = {}
-	) => {
+	) {
 		if (args.gt !== undefined && args.gte !== undefined)
 			throw new Error("Invalid bounds: {gt, gte}")
 		if (args.lt !== undefined && args.lte !== undefined)
@@ -475,15 +481,15 @@ export class InMemoryReducerTree<K = string | number, V = any, D = any> {
 			args.gt !== undefined
 				? args.gt
 				: args.gte !== undefined
-				? args.gte
-				: undefined
+					? args.gte
+					: undefined
 		const startOpen = args.gt !== undefined
 		const end =
 			args.lt !== undefined
 				? args.lt
 				: args.lte !== undefined
-				? args.lte
-				: undefined
+					? args.lte
+					: undefined
 		const endOpen = args.lt !== undefined
 
 		if (start !== undefined && end !== undefined) {
@@ -503,6 +509,12 @@ export class InMemoryReducerTree<K = string | number, V = any, D = any> {
 		} else {
 			startKey = this.startCursor()
 		}
+
+		// Empty tree.
+		if (startKey.nodePath.length === 0) {
+			return
+		}
+
 		if (end !== undefined) {
 			endKey = this.findPath(end)
 		} else {

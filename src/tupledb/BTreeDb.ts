@@ -3,6 +3,7 @@ import { jsonCodec } from "lexicodec"
 import { InMemoryBinaryPlusTree } from "../lib/InMemoryBinaryPlusTree"
 import { InMemoryIntervalTree } from "../lib/InMemoryIntervalTree"
 
+// No concurrency control because this is synchronous and embedded, just like SQLite.
 export class BTreeDb<K = any, V = any> {
 	constructor(public compareKey: (a: K, b: K) => number = jsonCodec.compare) {}
 
@@ -97,11 +98,6 @@ export class BTreeTx<K = any, V = any> {
 		return this.db.data.get(key)
 	}
 
-	set(key: K, value: V) {
-		this.sets.set(key, value)
-		this.deletes.delete(key)
-	}
-
 	list(
 		args: {
 			gt?: K
@@ -139,6 +135,11 @@ export class BTreeTx<K = any, V = any> {
 		}
 
 		return result
+	}
+
+	set(key: K, value: V) {
+		this.sets.set(key, value)
+		this.deletes.delete(key)
 	}
 
 	delete(key: K) {
