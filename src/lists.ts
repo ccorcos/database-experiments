@@ -150,3 +150,10 @@ type Index =
 			{ id: string; pos: string },
 			...Array<{ lr: LR; pos: string }>,
 	  ]
+
+positions.splice(0, 9999)
+
+insert(p, 0, 20)
+
+insert(p2, 20, 2)
+console.log(positions)

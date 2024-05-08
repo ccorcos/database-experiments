@@ -568,11 +568,21 @@ The good news is that the in-memory tree is still wicked fast – faster than SQ
 └─────────┴──────────────┴──────────────────────────────────────────────────────┴──────────┴──────────┴─────────┘
 ```
 
+---
+
+- BTreeDb
+- ITreeDb
+- ...async versions
+
+Maybe I need to make lexicodec serializable for schemas...
+
+Time for UI experiments repo? End goal being to build something airtable-like.
+Maybe start with a simple filing cabinet database abstrction?
+
 
 Generator yield types coming soon!
 https://github.com/microsoft/TypeScript/issues/36967
 
----
 
 minisql with tuple encoding on leveldb... more like a filing cabinet. using data-type-ts for schema.
 
@@ -583,3 +593,80 @@ Demos...
 - Contacts app  (Database)
 - Generalized Database (Airtable)
 - Filing Cabinets
+
+
+HERE
+
+- follower timeline, you can't index with sql.
+- async database with yields.
+
+
+
+
+```sql
+SELECT a.*, b.*
+FROM follow AS a
+JOIN follow AS b ON a.channel_id = b.channel_id
+WHERE a.user_id != b.user_id
+AND a.public = true
+AND b.public = true
+ORDER BY a.user_id, b.user_id;
+```
+
+```js
+cofollowers = {
+	select: { a: "follow", b: "follow" },
+	where: {
+		and: [
+			{ "a.channel_id": { eq: {$: "b.channel_id"} } },
+			{ "a.user_id": { neq: {$: "b.user_id"} } },
+			{ "a.public": { eq: true }},
+			{ "b.public": { eq: true }},
+		],
+	},
+	sort: ["a.user_id", "b.user_id"],
+}
+```
+
+```
+select
+a -> follow
+b -> follow
+where
+a.channel_id = b.channel_id
+a.user_id != b.user_id
+a.public = true
+b.public = true
+order by
+a.user_id b.user_id
+```
+
+
+```js
+cofollowers = {
+	select: [
+		{ follow: { user_id: "userA", channel_id: "channel" } },
+		{ follow: { user_id: "userB", channel_id: "channel" } },
+	],
+	filter: { userA: { neq: {$: "userB"} } },
+	sort: ["userA", "userB"],
+}
+```
+
+
+```js
+cofollowers = {
+	select: { a: "follow", b: "follow" },
+	where: {
+		and: [
+			{ "a.channel_id": { eq: {$: "b.channel_id"} } },
+			{ "a.user_id": { neq: {$: "b.user_id"} } },
+			{ "a.public": { eq: true }},
+			{ "b.public": { eq: true }},
+		],
+	},
+	sort: ["a.user_id", "b.user_id"],
+}
+```
+
+We can make a constaint that

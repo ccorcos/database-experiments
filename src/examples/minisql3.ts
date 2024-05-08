@@ -23,27 +23,147 @@ const tables = {
 		created_at: t.string,
 		channel_id: t.string,
 		author_id: t.string,
+		draft: t.optional(t.boolean),
+	}),
+	follow: t.object({
+		id: t.string,
+		user_id: t.string,
+		channel_id: t.string,
 	}),
 }
 
 type Schema = { [K in keyof typeof tables]: t.Infer<(typeof tables)[K]> }
-type Indexes = { [K in keyof Schema]?: Record<string, Array<keyof Schema[K]>> }
 
-/** `byId: ["id"]` is generated for every table by default. */
-const indexes: Indexes = {
-	user: {
-		byName: ["name", "id"],
+type AndFilter = { and: Filter[] }
+type OrFilter = { or: Filter[] }
+type PropertyFilter = {
+	[variable: string]:
+		| ExistenceFilter
+		| StringFilter
+		| BooleanFilter
+		| NumberFilter
+}
+
+type ExistenceFilter = { null: boolean }
+type BooleanFilter = { eq: boolean }
+type StringFilter =
+	| { eq: string }
+	| { neq: string }
+	| { contains: string }
+	| { ncontains: string }
+	| { startsWith: string }
+	| { endsWith: string }
+type NumberFilter =
+	| { eq: number }
+	| { neq: number }
+	| { gt: number }
+	| { gte: number }
+	| { lt: number }
+	| { lte: number }
+
+type Filter = AndFilter | OrFilter | PropertyFilter
+
+type Index = {
+	select: { [varName: string]: keyof Schema }
+	where?: Filter
+	sort: string[]
+}
+
+const indexes: { [V: string]: Index } = {
+	usersByName: {
+		select: { user: "user" },
+		sort: ["user.name", "user.id"],
 	},
-	message: {
-		byChannel: ["channel_id", "created_at", "id"],
+
+	channelMessages: {
+		select: { msg: "message" },
+		sort: ["msg.channel_id", "msg.created_at", "msg.id"],
+	},
+
+	userFollowing: {
+		select: [{ follow: { channel_id: "channel", user_id: "user" } }],
+		sort: ["user", "channel"],
+	},
+
+	channelFollowers: {
+		select: [{ follow: { id: "id", user_id: "user", channel_id: "channel" } }],
+		sort: ["channel", "user"],
+	},
+
+	// select * from message
+	// join follow on message.channel_id = follow.channel_id
+	// where message.draft = false
+	// order by follow.user_id, message.created_at, message.id
+
+	timeline: {
+		select: [
+			{ follow: { user_id: "user", channel_id: "channel" } },
+			{
+				message: {
+					id: "message",
+					channel_id: "channel",
+					created_at: "time",
+					draft: "draft",
+				},
+			},
+		],
+		filter: { or: [{ draft: { null: true } }, { draft: { eq: false } }] },
+		sort: ["user", "time", "message"],
+	},
+
+	// SELECT a.*, b.*
+	// FROM follow AS a
+	// JOIN follow AS b ON a.channel_id = b.channel_id
+	// WHERE a.user_id != b.user_id
+	// ORDER BY a.user_id, b.user_id;
+
+	cofollowers: {
+		select: [
+			{ follow: { user_id: "userA", channel_id: "channel" } },
+			{ follow: { user_id: "userB", channel_id: "channel" } },
+		],
+		filter: { userA: { neq: "userB" } },
+		sort: ["userA", "userB"],
+	},
+
+	cofollowers2: {
+		select: { a: "follow", b: "follow" },
+		filter: {
+			and: [
+				{ "a.channel_id": { eq: "b.channel_id" } },
+				{ "a.user_id": { neq: "b.user_id" } },
+			],
+		},
+		sort: ["a.user_id", "b.user_id"],
 	},
 }
+
+// STOP
 
 const db = new BTreeDb()
 
 function insert<T extends keyof Schema>(table: T, value: Schema[T]) {
 	const error = tables[table].validate(value)
 	if (error) throw new Error(t.formatError(error))
+
+	const prev = db.get([table, value.id])
+
+	if (prev) {
+		for (const [indexName, index] of Object.entries(indexes)) {
+			const vars = {}
+			for (const select of index.select) {
+				const varMap = select[table]
+				if (!varMap) continue
+				for (const [colName, varName] of Object.entries(varMap)) {
+					vars[varName] = prev[colName]
+				}
+			}
+
+			const tuple = index.sort.map((varName) => {
+				if (!(varName in vars)) throw new Error("Missing ")
+			})
+		}
+	}
 
 	db.set([table, "byId", value.id], value)
 	const tableIndexes = indexes[table]
