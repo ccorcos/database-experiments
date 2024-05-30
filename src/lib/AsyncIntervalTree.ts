@@ -1,21 +1,24 @@
 import {
-	AsyncKeyValueStorage,
 	AsyncReducerTree,
 	BranchNode,
 	LeafNode,
 	ReadTransaction,
 	TreeReducer,
 } from "./AsyncReducerTree"
+import { AsyncKeyValueApi, KeyValueApi } from "./types"
 
 export class AsyncIntervalTree<
 	K extends [B, B, ...any[]],
 	V = any,
-	B = any
+	B = any,
 > extends AsyncReducerTree<K, V, [B, B]> {
 	constructor(
-		public storage: AsyncKeyValueStorage<
-			BranchNode<K, [B, B]> | LeafNode<K, V, [B, B]>
-		>,
+		public storage:
+			| KeyValueApi<string, BranchNode<K, [B, B]> | LeafNode<K, V, [B, B]>>
+			| AsyncKeyValueApi<
+					string,
+					BranchNode<K, [B, B]> | LeafNode<K, V, [B, B]>
+			  >,
 		public minSize: number,
 		public maxSize: number,
 		public compareKey: (a: K, b: K) => number,

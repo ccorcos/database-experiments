@@ -1,14 +1,6 @@
 import { RWLock } from "@ccorcos/lock"
 import { orderedArray } from "@ccorcos/ordered-array"
-
-/** Used to store tree nodes. */
-export type AsyncKeyValueStorage<V = any> = {
-	get: (key: string) => Promise<V | undefined>
-	write: (tx: {
-		set?: { key: string; value: V }[]
-		delete?: string[]
-	}) => Promise<void>
-}
+import { AsyncKeyValueApi, KeyValueApi } from "./types"
 
 type ReadTransactionApi<T> = {
 	get: (key: string) => Promise<T | undefined>
@@ -17,7 +9,9 @@ type ReadTransactionApi<T> = {
 export class ReadTransaction<T> implements ReadTransactionApi<T> {
 	cache = new Map<string, T | undefined>()
 
-	constructor(public storage: AsyncKeyValueStorage<T>) {}
+	constructor(
+		public storage: KeyValueApi<string, T> | AsyncKeyValueApi<string, T>
+	) {}
 
 	async get(key: string): Promise<T | undefined> {
 		if (this.cache.has(key)) return this.cache.get(key)
@@ -95,7 +89,7 @@ export type TreeReducer<K, V, D> = {
 }
 
 export function combineTreeReducers<
-	A extends { [key: string]: TreeReducer<any, any, any> }
+	A extends { [key: string]: TreeReducer<any, any, any> },
 >(reducers: A) {
 	const combined: TreeReducer<
 		A[keyof A] extends TreeReducer<infer K, any, any> ? K : never,
@@ -127,7 +121,9 @@ export class AsyncReducerTree<K = string | number, V = any, D = any> {
 	 * minSize must be less than maxSize / 2.
 	 */
 	constructor(
-		public storage: AsyncKeyValueStorage<BranchNode<K, D> | LeafNode<K, V, D>>,
+		public storage:
+			| KeyValueApi<string, BranchNode<K, D> | LeafNode<K, V, D>>
+			| AsyncKeyValueApi<string, BranchNode<K, D> | LeafNode<K, V, D>>,
 		public minSize: number,
 		public maxSize: number,
 		public reducer: TreeReducer<K, V, D>,
@@ -340,15 +336,15 @@ export class AsyncReducerTree<K = string | number, V = any, D = any> {
 				args.gt !== undefined
 					? args.gt
 					: args.gte !== undefined
-					? args.gte
-					: undefined
+						? args.gte
+						: undefined
 			const startOpen = args.gt !== undefined
 			const end =
 				args.lt !== undefined
 					? args.lt
 					: args.lte !== undefined
-					? args.lte
-					: undefined
+						? args.lte
+						: undefined
 			const endOpen = args.lt !== undefined
 
 			if (start !== undefined && end !== undefined) {
@@ -566,15 +562,15 @@ export class AsyncReducerTree<K = string | number, V = any, D = any> {
 				args.gt !== undefined
 					? args.gt
 					: args.gte !== undefined
-					? args.gte
-					: undefined
+						? args.gte
+						: undefined
 			const startOpen = args.gt !== undefined
 			const end =
 				args.lt !== undefined
 					? args.lt
 					: args.lte !== undefined
-					? args.lte
-					: undefined
+						? args.lte
+						: undefined
 			const endOpen = args.lt !== undefined
 
 			if (start !== undefined && end !== undefined) {

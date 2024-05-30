@@ -1,10 +1,12 @@
 import { IDBPDatabase, openDB } from "idb"
-import { AsyncKeyValueStorage } from "../lib/AsyncBinaryPlusTree"
+import { AsyncKeyValueApi } from "../lib/types"
 
 const version = 1
 const storeName = "kv"
 
-export class IndexedDbKeyValueStorage<V> implements AsyncKeyValueStorage<V> {
+export class IndexedDbKeyValueStorage<V = any>
+	implements AsyncKeyValueApi<string, V>
+{
 	private db: Promise<IDBPDatabase<any>>
 
 	constructor(public dbName: string) {
@@ -15,16 +17,16 @@ export class IndexedDbKeyValueStorage<V> implements AsyncKeyValueStorage<V> {
 		})
 	}
 
-	get = async (key: string) => {
+	async get(key: string) {
 		const db = await this.db
 		const value = await db.get(storeName, key)
 		return value as V | undefined
 	}
 
-	write = async (writes: {
+	async write(writes: {
 		set?: { key: string; value: V }[]
 		delete?: string[]
-	}) => {
+	}) {
 		const db = await this.db
 		const tx = db.transaction(storeName, "readwrite")
 		for (const { key, value } of writes.set || []) {

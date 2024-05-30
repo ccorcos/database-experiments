@@ -1,13 +1,13 @@
 import { AbstractBatch } from "abstract-leveldown"
 import { Level } from "level"
-import { AsyncKeyValueApi } from "../lib/types"
+import { AsyncOrderedKeyValueApi } from "../lib/types"
 
-export class LevelDbKeyValueStorage<V = any>
-	implements AsyncKeyValueApi<string, V>
+export class LevelDbOrderedKeyValueStorage<V = any>
+	implements AsyncOrderedKeyValueApi<string, V>
 {
 	/**
 	 * import { Level } from "level"
-	 * new LevelDbKeyValueStorage(new Level("path/to.db"))
+	 * new LevelDbOrderedKeyValueStorage(new Level("path/to.db"))
 	 */
 	constructor(public db: Level) {}
 
@@ -16,6 +16,23 @@ export class LevelDbKeyValueStorage<V = any>
 			const value = await this.db.get(key)
 			return JSON.parse(value) as V
 		} catch (error) {}
+	}
+
+	async list(
+		args: {
+			gt?: string
+			gte?: string
+			lt?: string
+			lte?: string
+			limit?: number
+			reverse?: boolean
+		} = {}
+	) {
+		const results: { key: string; value: V }[] = []
+		for await (const [key, value] of this.db.iterator(args)) {
+			results.push({ key: key, value: JSON.parse(value) })
+		}
+		return results
 	}
 
 	async write(

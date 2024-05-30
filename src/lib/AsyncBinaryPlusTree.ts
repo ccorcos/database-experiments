@@ -13,15 +13,7 @@ TODO
 
 import { RWLock } from "@ccorcos/lock"
 import { orderedArray } from "@ccorcos/ordered-array"
-
-/** Used to store tree nodes. */
-export type AsyncKeyValueStorage<V = any> = {
-	get: (key: string) => Promise<V | undefined>
-	write: (tx: {
-		set?: { key: string; value: V }[]
-		delete?: string[]
-	}) => Promise<void>
-}
+import { AsyncKeyValueApi, KeyValueApi } from "./types"
 
 type ReadTransactionApi<T> = {
 	get: (key: string) => Promise<T | undefined>
@@ -30,7 +22,9 @@ type ReadTransactionApi<T> = {
 export class ReadTransaction<T> implements ReadTransactionApi<T> {
 	cache = new Map<string, T | undefined>()
 
-	constructor(public storage: AsyncKeyValueStorage<T>) {}
+	constructor(
+		public storage: KeyValueApi<string, T> | AsyncKeyValueApi<string, T>
+	) {}
 
 	async get(key: string): Promise<T | undefined> {
 		if (this.cache.has(key)) return this.cache.get(key)
@@ -105,7 +99,9 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 	 * minSize must be less than maxSize / 2.
 	 */
 	constructor(
-		public storage: AsyncKeyValueStorage<BranchNode<K> | LeafNode<K, V>>,
+		public storage:
+			| KeyValueApi<string, BranchNode<K> | LeafNode<K, V>>
+			| AsyncKeyValueApi<string, BranchNode<K> | LeafNode<K, V>>,
 		public minSize: number,
 		public maxSize: number,
 		public compareKey: (a: K, b: K) => number = compare
@@ -317,15 +313,15 @@ export class AsyncBinaryPlusTree<K = string | number, V = any> {
 				args.gt !== undefined
 					? args.gt
 					: args.gte !== undefined
-					? args.gte
-					: undefined
+						? args.gte
+						: undefined
 			const startOpen = args.gt !== undefined
 			const end =
 				args.lt !== undefined
 					? args.lt
 					: args.lte !== undefined
-					? args.lte
-					: undefined
+						? args.lte
+						: undefined
 			const endOpen = args.lt !== undefined
 
 			if (start !== undefined && end !== undefined) {

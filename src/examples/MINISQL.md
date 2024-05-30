@@ -2,6 +2,13 @@ A relational model / dsl / syntax for creating indexes and working with data.
 
 
 
+What are some examples...
+
+- todomvc
+- social network follower feed
+- triplestore
+- end-user database
+
 
 HERE
 
@@ -77,4 +84,23 @@ cofollowers = {
 }
 ```
 
-We can make a constaint that
+We can make a constaint that all indexes must include record ids, and there's no hardcoding specific values. No conditional indexes because those are hard to maintain? Lets just consider that later.
+
+```js
+cofollowers = {
+	select: { a: "follow", b: "follow" },
+	where: {
+		and: [
+			{ "a.channel_id": { eq: "b.channel_id" } },
+			{ "a.user_id": { neq: "b.user_id" } },
+			{ "a.public": { eq: true }},
+			{ "b.public": { eq: true }},
+		],
+	},
+	sort: ["a.public", "b.public", "a.user_id", "b.user_id"],
+}
+```
+
+Maybe it makes sense that indexes can only be datalog-style matching queries because that's a bit more mechanical.
+
+Or maybe lets worry about that later and focus on UI for now.

@@ -1,8 +1,10 @@
 import * as fs from "fs-extra"
 import * as path from "path"
-import { AsyncKeyValueStorage } from "../lib/AsyncBinaryPlusTree"
+import { KeyValueApi } from "../lib/types"
 
-export class JsonFileKeyValueStorage<V> implements AsyncKeyValueStorage<V> {
+export class JsonFileKeyValueStorage<V = any>
+	implements KeyValueApi<string, V>
+{
 	map: { [key: string]: V } = {}
 
 	constructor(public dbPath: string) {
@@ -35,14 +37,11 @@ export class JsonFileKeyValueStorage<V> implements AsyncKeyValueStorage<V> {
 		fs.writeFileSync(this.dbPath, contents, "utf8")
 	}
 
-	get = async (key: string) => {
+	get(key: string) {
 		return this.map[key]
 	}
 
-	write = async (tx: {
-		set?: { key: string; value: V }[]
-		delete?: string[]
-	}) => {
+	write(tx: { set?: { key: string; value: V }[]; delete?: string[] }) {
 		for (const { key, value } of tx.set || []) {
 			this.map[key] = value
 		}

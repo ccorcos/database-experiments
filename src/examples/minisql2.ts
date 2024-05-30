@@ -132,16 +132,16 @@ const indexes: { [V: string]: Index } = {
 		sort: ["userA", "userB"],
 	},
 
-	cofollowers2: {
-		select: { a: "follow", b: "follow" },
-		filter: {
-			and: [
-				{ "a.channel_id": { eq: "b.channel_id" } },
-				{ "a.user_id": { neq: "b.user_id" } },
-			],
-		},
-		sort: ["a.user_id", "b.user_id"],
-	},
+	// cofollowers2: {
+	// 	select: { a: "follow", b: "follow" },
+	// 	filter: {
+	// 		and: [
+	// 			{ "a.channel_id": { eq: "b.channel_id" } },
+	// 			{ "a.user_id": { neq: "b.user_id" } },
+	// 		],
+	// 	},
+	// 	sort: ["a.user_id", "b.user_id"],
+	// },
 }
 
 // STOP
@@ -171,15 +171,15 @@ function insert<T extends keyof Schema>(table: T, value: Schema[T]) {
 		}
 	}
 
-	db.set([table, "byId", value.id], value)
-	const tableIndexes = indexes[table]
-	if (tableIndexes) {
-		for (const [index, columns] of Object.entries(tableIndexes)) {
-			if (index === "byId") continue
-			const keys = columns.map((col) => value[col])
-			db.set([table, index, ...keys], value)
-		}
-	}
+	// db.set([table, "byId", value.id], value)
+	// const tableIndexes = indexes[table]
+	// if (tableIndexes) {
+	// 	for (const [index, columns] of Object.entries(tableIndexes)) {
+	// 		if (index === "byId") continue
+	// 		const keys = columns.map((col) => value[col])
+	// 		db.set([table, index, ...keys], value)
+	// 	}
+	// }
 }
 
 function remove(table: keyof Schema, id: string) {
@@ -188,14 +188,14 @@ function remove(table: keyof Schema, id: string) {
 
 	db.delete([table, "byId", id])
 
-	const tableIndexes = indexes[table]
-	if (tableIndexes) {
-		for (const [index, columns] of Object.entries(tableIndexes)) {
-			if (index === "byId") continue
-			const keys = columns.map((col) => existing[col])
-			db.delete([table, index, ...keys])
-		}
-	}
+	// const tableIndexes = indexes[table]
+	// if (tableIndexes) {
+	// 	for (const [index, columns] of Object.entries(tableIndexes)) {
+	// 		if (index === "byId") continue
+	// 		const keys = columns.map((col) => existing[col])
+	// 		db.delete([table, index, ...keys])
+	// 	}
+	// }
 }
 
 function randomId() {
