@@ -570,10 +570,41 @@ The good news is that the in-memory tree is still wicked fast – faster than SQ
 
 # What's next?
 
+
+- Basic locking concurrency pattern
+	- Later, we could consider versionstamps or something.
+- Query generator transaction abstraction.
+- Reactivity?
+
+
+
+
+Game plan...
+- first create some examples with hardcoded indexing logic
+- then create some kind of syntax for persisting indexes
+- then implement all the shared transaction stuff.
+
+examples
+- messaging app
+- social app
+- calendar app
+- notes app
+- end-user database app
+
+
+
+-> examples/messaging.ts
+
+
 plan for database-experiments...
 - fit everything into an api so we can do perf comparisons easier
+- how to mix and match trees transactionally?
+
 - how to mix interval trees with btrees? Suppose I want an interval tree per user... Will this work? [[userId, start], [userId, end]]
 	- perf comparison for this kind of structure.
+
+
+
 
 thinking... postgres, denokv, foundationdb for storage?
 
@@ -605,6 +636,8 @@ examples
 
 Generator yield types coming soon!
 https://github.com/microsoft/TypeScript/issues/36967
+-> https://github.com/microsoft/TypeScript/issues/43632
+-> https://www.matechs.com/blog/abusing-typescript-generators
 
 
 Demos...
