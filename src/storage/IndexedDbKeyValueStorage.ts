@@ -30,10 +30,10 @@ export class IndexedDbKeyValueStorage<V = any>
 		const db = await this.db
 		const tx = db.transaction(storeName, "readwrite")
 		for (const { key, value } of writes.set || []) {
-			tx.store.put(value, key)
+			await tx.store.put(value, key)
 		}
 		for (const key of writes.delete || []) {
-			tx.store.delete(key)
+			await tx.store.delete(key)
 		}
 		await tx.done
 	}

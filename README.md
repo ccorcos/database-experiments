@@ -570,11 +570,18 @@ The good news is that the in-memory tree is still wicked fast – faster than SQ
 
 # What's next?
 
+- RW lock should be on at the storage layer.
+- Transaction should be at the storage layer.
+- Tree abstractions are stateless.
 
-- Basic locking concurrency pattern
-	- Later, we could consider versionstamps or something.
+- The database client uses trees as it pleases, ties together concurrency and reactivity.
 - Query generator transaction abstraction.
-- Reactivity?
+
+- version updates and stuff is application-layer.
+
+
+
+
 
 
 
