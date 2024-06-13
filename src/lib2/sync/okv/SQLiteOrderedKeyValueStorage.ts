@@ -1,9 +1,14 @@
 import { Database, Statement, Transaction } from "better-sqlite3"
-import { OrderedKeyValueApi } from "../lib/types"
+import { OrderedKeyValueApi } from "./types"
 
-export class SQLiteOrderedKeyValueStorage<V = any>
-	implements OrderedKeyValueApi<string, V>
+export class SQLiteOrderedKeyValueStorage
+	implements OrderedKeyValueApi<string, string>
 {
+	private getQuery: Statement
+	private insertQuery: Statement
+	private deleteQuery: Statement
+	private writeFactsQuery: Transaction
+
 	/**
 	 * import sqlite from "better-sqlite3"
 	 * new SQLiteOrderedKeyValueStorage(sqlite("path/to.db"))
@@ -18,30 +23,27 @@ export class SQLiteOrderedKeyValueStorage<V = any>
 
 		this.getQuery = db.prepare(`select * from data where key = $key`)
 
-		const insertQuery = db.prepare(
+		this.insertQuery = db.prepare(
 			`insert or replace into data values ($key, $value)`
 		)
-		const deleteQuery = db.prepare(`delete from data where key = $key`)
+		this.deleteQuery = db.prepare(`delete from data where key = $key`)
 
 		this.writeFactsQuery = this.db.transaction(
 			(tx: { set?: { key: string; value: any }[]; delete?: string[] }) => {
 				for (const { key, value } of tx.set || []) {
-					insertQuery.run({ key, value: JSON.stringify(value) })
+					this.insertQuery.run({ key, value })
 				}
 				for (const key of tx.delete || []) {
-					deleteQuery.run({ key: key })
+					this.deleteQuery.run({ key: key })
 				}
 			}
 		)
 	}
 
-	private getQuery: Statement
-	private writeFactsQuery: Transaction
-
 	get(key: string) {
-		return this.getQuery
-			.all({ key })
-			.map((row: any) => JSON.parse(row.value))[0] as V | undefined
+		return this.getQuery.all({ key }).map((row: any) => row.value)[0] as
+			| string
+			| undefined
 	}
 
 	list(
@@ -90,14 +92,19 @@ export class SQLiteOrderedKeyValueStorage<V = any>
 
 		const results: any[] = this.db.prepare(sqlQuery).all(sqlArgs)
 
-		return results.map(({ key, value }) => ({
-			key: key,
-			value: JSON.parse(value),
-		}))
+		return results.map(({ key, value }) => ({ key, value }))
 	}
 
-	write(tx: { set?: { key: string; value: V }[]; delete?: string[] }) {
-		this.writeFactsQuery(tx)
+	set(key: string, value: string) {
+		return this.insertQuery.run({ key, value })
+	}
+
+	delete(key: string) {
+		return this.deleteQuery.run({ key })
+	}
+
+	batch(writes: { set?: { key: string; value: string }[]; delete?: string[] }) {
+		this.writeFactsQuery(writes)
 	}
 
 	close() {

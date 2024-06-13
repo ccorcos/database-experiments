@@ -573,11 +573,17 @@ The good news is that the in-memory tree is still wicked fast – faster than SQ
 I need a better plan.
 
 - sync kv
+- async kv
 - sync okv
+
+TODO
+- add serialization logic for kv
+
+- async okv
+
+
 - sync reducer
 - sync interval
-- async kv
-- async okv
 - async reducer
 - async interval
 

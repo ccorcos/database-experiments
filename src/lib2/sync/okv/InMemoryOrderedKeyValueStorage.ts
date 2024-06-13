@@ -1,7 +1,5 @@
 import { insert, remove, search } from "@ccorcos/ordered-array"
-import * as fs from "fs-extra"
-import * as path from "path"
-import { OrderedKeyValueApi } from "../lib/types"
+import { OrderedKeyValueApi } from "./types"
 
 function compare(a: any, b: any) {
 	if (a === b) return 0
@@ -9,43 +7,12 @@ function compare(a: any, b: any) {
 	return -1
 }
 
-export class JsonFileOrderedKeyValueStorage<K = string, V = any>
+export class InMemoryOrderedKeyValueStorage<K = string, V = any>
 	implements OrderedKeyValueApi<K, V>
 {
 	data: { key: K; value: V }[] = []
 
-	constructor(
-		public dbPath: string,
-		public compareKey: (a: K, b: K) => number = compare
-	) {
-		this.loadFile()
-	}
-
-	private loadFile() {
-		// Check that the file exists.
-		try {
-			const stat = fs.statSync(this.dbPath)
-			if (!stat.isFile()) {
-				throw new Error("Database is not a file.")
-			}
-		} catch (error) {
-			if (error.code === "ENOENT") {
-				// File does not exist.
-				return
-			}
-			throw error
-		}
-
-		// Read the file.
-		const contents = fs.readFileSync(this.dbPath, "utf8")
-		this.data = JSON.parse(contents) || []
-	}
-
-	private saveFile() {
-		const contents = JSON.stringify(this.data)
-		fs.mkdirpSync(path.dirname(this.dbPath))
-		fs.writeFileSync(this.dbPath, contents, "utf8")
-	}
+	constructor(public compareKey: (a: K, b: K) => number = compare) {}
 
 	get(key: K) {
 		const result = search(this.data, key, ({ key }) => key, this.compareKey)
@@ -111,13 +78,20 @@ export class JsonFileOrderedKeyValueStorage<K = string, V = any>
 		return result
 	}
 
-	write(tx: { set?: { key: K; value: V }[]; delete?: K[] }) {
-		for (const { key, value } of tx.set || []) {
+	set(key: K, value: V) {
+		this.batch({ set: [{ key, value }] })
+	}
+
+	delete(key: K) {
+		this.batch({ delete: [key] })
+	}
+
+	batch(writes: { set?: { key: K; value: V }[]; delete?: K[] }) {
+		for (const { key, value } of writes.set || []) {
 			insert(this.data, { key, value }, ({ key }) => key, this.compareKey)
 		}
-		for (const key of tx.delete || []) {
+		for (const key of writes.delete || []) {
 			remove(this.data, key, ({ key }) => key, this.compareKey)
 		}
-		this.saveFile()
 	}
 }

@@ -3,8 +3,5 @@ export type KeyValueApi<K = string, V = any> = {
 
 	set: (key: K, value: V) => void
 	delete: (key: K) => void
-	batch: (writes: {
-		set?: { key: string; value: V }[]
-		delete?: string[]
-	}) => void
+	batch: (writes: { set?: { key: K; value: V }[]; delete?: K[] }) => void
 }
