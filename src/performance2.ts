@@ -5,9 +5,9 @@ import { chunk, sampleSize, shuffle } from "lodash"
 import { Bench } from "tinybench"
 import { AsyncBinaryPlusTree } from "./lib/AsyncBinaryPlusTree"
 import { InMemoryBinaryPlusTree } from "./lib/InMemoryBinaryPlusTree"
+import { LevelDbKeyValueStorage } from "./lib2/async/kv/LevelDbKeyValueStorage"
+import { SQLiteKeyValueStorage } from "./lib2/sync/kv/SQLiteKeyValueStorage"
 import { printTable } from "./perfTools"
-import { LevelDbKeyValueStorage } from "./storage/LevelDbKeyValueStorage"
-import { SQLiteKeyValueStorage } from "./storage/SQLiteKeyValueStorage"
 /*
 
 Performance...
@@ -127,7 +127,7 @@ async function test1() {
 		.add("insert 10_000 sqlite", async () => {
 			const storage = new SQLiteKeyValueStorage(sqlite(tmp("data.sqlite")))
 			for (const n of numbers)
-				await storage.write({ set: [{ key: n.toString(), value: n }] })
+				await storage.batch({ set: [{ key: n.toString(), value: n }] })
 		})
 		.add("insert 10_000 b+sqlite", async () => {
 			const storage = new SQLiteKeyValueStorage(sqlite(tmp("data.sqlite")))
@@ -146,7 +146,7 @@ async function test1() {
 		})
 		.add("insert batch 10_000 sqlite", async () => {
 			const storage = new SQLiteKeyValueStorage(sqlite(tmp("data.sqlite")))
-			await storage.write({
+			await storage.batch({
 				set: numbers.map((n) => ({ key: n.toString(), value: n })),
 			})
 		})
@@ -196,7 +196,7 @@ async function test2() {
 			{
 				storageSqlite = new SQLiteKeyValueStorage(sqlite(tmp("data.sqlite")))
 
-				await storageSqlite.write({
+				await storageSqlite.batch({
 					set: baseArray.map((n) => ({ key: n.toString(), value: n })),
 				})
 			}
@@ -234,7 +234,7 @@ async function test2() {
 	bench
 		.add("insert 1000 more from 100k sqlite", async () => {
 			for (const n of insertNumbers)
-				await storageSqlite.write({ set: [{ key: n.toString(), value: n }] })
+				await storageSqlite.batch({ set: [{ key: n.toString(), value: n }] })
 		})
 		.add("insert 1000 more from 100k b+ sqlite", async () => {
 			for (const n of insertNumbers)
@@ -250,7 +250,7 @@ async function test2() {
 		})
 		.add("delete 1000 more from 100k sqlite", async () => {
 			for (const n of deleteNumbers)
-				await storageSqlite.write({ delete: [n.toString()] })
+				await storageSqlite.batch({ delete: [n.toString()] })
 		})
 		.add("delete 1000 more from 100k b+ sqlite", async () => {
 			for (const n of deleteNumbers)

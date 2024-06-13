@@ -7,8 +7,8 @@ import Bench from "tinybench"
 import { AsyncIntervalTree } from "./lib/AsyncIntervalTree"
 import { AsyncReducerTree, TreeReducer } from "./lib/AsyncReducerTree"
 import { InMemoryIntervalTree } from "./lib/InMemoryIntervalTree"
+import { LevelDbKeyValueStorage } from "./lib2/async/kv/LevelDbKeyValueStorage"
 import { printTable } from "./perfTools"
-import { LevelDbKeyValueStorage } from "./storage/LevelDbKeyValueStorage"
 
 let now = Date.now()
 function tmp(fileName: string) {
@@ -55,7 +55,7 @@ async function test0() {
 					() =>
 						[sample(numbers)!, sample(numbers)!].sort((a, b) => a - b) as [
 							number,
-							number
+							number,
 						]
 				)
 			const storage = new LevelDbKeyValueStorage(new Level(tmp("data.leveldb")))
@@ -157,7 +157,7 @@ async function test1() {
 					() =>
 						[sample(boundsArray)!, sample(boundsArray)!].sort() as [
 							string,
-							string
+							string,
 						]
 				)
 

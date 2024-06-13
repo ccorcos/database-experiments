@@ -570,6 +570,33 @@ The good news is that the in-memory tree is still wicked fast – faster than SQ
 
 # What's next?
 
+I need a better plan.
+
+- sync kv
+- sync okv
+- sync reducer
+- sync interval
+- async kv
+- async okv
+- async reducer
+- async interval
+
+- batch write
+- explicit consistency checks
+- read transaction
+- write transaction
+
+- generator query syntax
+- generalized query/index stuff
+
+---
+
+- this database is intended to be single-process.
+	- readTransaction ensures all reads are made together
+	- writeTransaction ensures all read and writes are made together
+	when is comes to FoundationDb or Postgres, you can do special things instead of just a lock.
+
+
 - RW lock should be on at the storage layer.
 - Transaction should be at the storage layer.
 - Tree abstractions are stateless.

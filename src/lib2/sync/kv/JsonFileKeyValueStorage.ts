@@ -1,6 +1,6 @@
 import * as fs from "fs-extra"
 import * as path from "path"
-import { KeyValueApi } from "../lib/types"
+import { KeyValueApi } from "./types"
 
 export class JsonFileKeyValueStorage<V = any>
 	implements KeyValueApi<string, V>
@@ -41,11 +41,19 @@ export class JsonFileKeyValueStorage<V = any>
 		return this.map[key]
 	}
 
-	write(tx: { set?: { key: string; value: V }[]; delete?: string[] }) {
-		for (const { key, value } of tx.set || []) {
+	set(key: string, value: V) {
+		this.batch({ set: [{ key, value }] })
+	}
+
+	delete(key: string) {
+		this.batch({ delete: [key] })
+	}
+
+	batch(writes: { set?: { key: string; value: V }[]; delete?: string[] }) {
+		for (const { key, value } of writes.set || []) {
 			this.map[key] = value
 		}
-		for (const key of tx.delete || []) {
+		for (const key of writes.delete || []) {
 			delete this.map[key]
 		}
 		this.saveFile()
