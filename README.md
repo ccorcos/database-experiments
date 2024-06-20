@@ -575,12 +575,23 @@ I need a better plan.
 - sync kv
 - async kv
 - sync okv
-
-TODO
-- add serialization logic for kv
-
 - async okv
 
+TODO
+- b+ tree stuff could just be helper functions...
+
+
+- add serialization logic for kv?
+
+
+
+hmm. Are we able to touch multiple structures with the same backend this way?
+maybe we need to think about the other trees in context too.
+
+
+skip ahead... to queries and how to replace tuple-database.
+then think about orm things.
+then backfill other storage mechanisms.
 
 - sync reducer
 - sync interval

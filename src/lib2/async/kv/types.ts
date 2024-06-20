@@ -4,8 +4,8 @@ export type AsyncKeyValueApi<K = string, V = any> = {
 	set: (key: K, value: V) => Promise<void>
 	delete: (key: K) => Promise<void>
 	batch: (writes: {
-		set?: { key: string; value: V }[]
-		delete?: string[]
+		set?: { key: K; value: V }[]
+		delete?: K[]
 	}) => Promise<void>
 
 	read: () => AsyncKeyValueReadTxApi<K, V>
@@ -22,10 +22,7 @@ export type AsyncKeyValueWriteTxApi<K = string, V = any> = {
 
 	set: (key: K, value: V) => void
 	delete: (key: K) => void
-	batch: (writes: {
-		set?: { key: string; value: V }[]
-		delete?: string[]
-	}) => void
+	batch: (writes: { set?: { key: K; value: V }[]; delete?: K[] }) => void
 
 	commit: () => Promise<void>
 }

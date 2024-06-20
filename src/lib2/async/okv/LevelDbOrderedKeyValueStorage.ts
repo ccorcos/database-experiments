@@ -2,9 +2,10 @@ import { RWLock } from "@ccorcos/lock"
 import { AbstractBatch } from "abstract-leveldown"
 import { Level } from "level"
 import {
-	AsyncKeyValueApi,
-	AsyncKeyValueReadTx,
-	AsyncKeyValueWriteTx,
+	AsyncOrderedKeyValueApi,
+	AsyncOrderedKeyValueReadTx,
+	AsyncOrderedKeyValueWriteTx,
+	ListArgs,
 } from "./types"
 
 function batchOps(
@@ -24,19 +25,28 @@ function batchOps(
 	return ops
 }
 
-export class LevelDbKeyValueStorage
-	implements AsyncKeyValueApi<string, string>
+export class LevelDbOrderedKeyValueStorage
+	implements AsyncOrderedKeyValueApi<string, string>
 {
 	/**
 	 * import { Level } from "level"
-	 * new LevelDbKeyValueStorage(new Level("path/to.db"))
+	 * new LevelDbOrderedKeyValueStorage(new Level("path/to.db"))
 	 */
 	constructor(public db: Level) {}
 
 	lock = new RWLock()
 
 	async get(key: string) {
-		return this.lock.withRead(() => this.db.get(key))
+		const value = await this.db.get(key)
+		return value
+	}
+
+	async list(args: ListArgs<string> = {}) {
+		const results: { key: string; value: string }[] = []
+		for await (const [key, value] of this.db.iterator(args)) {
+			results.push({ key, value })
+		}
+		return results
 	}
 
 	async set(key: string, value: string) {
@@ -53,17 +63,24 @@ export class LevelDbKeyValueStorage
 			delete?: string[]
 		} = {}
 	) {
-		return this.lock.withWrite(() => this.db.batch(batchOps(writes)))
+		await this.db.batch(batchOps(writes))
 	}
 
 	read() {
 		const { db } = this
 		let promise = this.lock.read()
 
-		return new AsyncKeyValueReadTx({
+		return new AsyncOrderedKeyValueReadTx<string, string>({
 			async get(key) {
 				await promise
 				return db.get(key)
+			},
+			async list(args) {
+				const results: { key: string; value: string }[] = []
+				for await (const [key, value] of db.iterator(args)) {
+					results.push({ key, value })
+				}
+				return results
 			},
 			async commit() {
 				const release = await promise
@@ -76,10 +93,17 @@ export class LevelDbKeyValueStorage
 		const { db } = this
 		let promise = this.lock.write()
 
-		return new AsyncKeyValueWriteTx({
+		return new AsyncOrderedKeyValueWriteTx<string, string>({
 			async get(key) {
 				await promise
 				return db.get(key)
+			},
+			async list(args) {
+				const results: { key: string; value: string }[] = []
+				for await (const [key, value] of db.iterator(args)) {
+					results.push({ key, value })
+				}
+				return results
 			},
 			async commit(writes) {
 				const release = await promise
