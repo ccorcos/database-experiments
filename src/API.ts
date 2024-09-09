@@ -129,6 +129,8 @@ const Schema = [
 	{ key: ["timeline", t.uuid, t.datetime, t.uuid], value: null },
 	/* user.id, start, end, post.id  */
 	{ key: ["calendar", t.uuid, t.datetime, t.datetime, t.uuid], value: null },
+
+	{ key: ["version", t.any], value: t.number },
 ]
 
 // const users = db.btree<[string], User>("users")
@@ -143,33 +145,58 @@ const Schema = [
 // - tedious index definitions
 // - async vs sync.
 
+function check(tx: any, key: any) {
+	const version = tx.get(["version", key])
+	tx.check(["version", key], version)
+}
+
+function inc(tx: any, key: any) {
+	tx.inc(["version", key])
+}
+
 const createUser = (tx: any, user: any) => {
 	tx.set(["user", user.id], user)
+	inc(tx, ["user", user.id])
+
 	tx.set(["usernames", user.username, user.id], null)
 }
 
 const indexPost = (tx: any, userId: string, post: any) => {
 	tx.set(["timeline", userId, post.created, post.id])
+	inc(tx, ["timeline", userId])
+
 	tx.set(["calendar", userId, post.start, post.end, post.id], null)
+	inc(tx, ["calendar", userId])
 }
 
 const createFollow = (tx: any, follow: any) => {
 	tx.set(["follows", follow.from, follow.to], follow)
+	inc(tx, ["follows", follow.from])
+
 	tx.set(["followers", follow.to, follow.from], null)
+	inc(tx, ["followers", follow.to])
 
 	// Add posts to timeline.
+	check(tx, ["profile", follow.to])
 	for (const { key } of tx.list({ prefix: ["profile", follow.to] })) {
 		const [_1, _2, _3, postId] = key
+
+		check(tx, ["post", postId])
 		const post = tx.get(["post", postId])
+
 		indexPost(tx, follow.from, post)
 	}
 }
 
 const createPost = (tx: any, post: any) => {
 	tx.set(["post", post.id], post)
+	inc(tx, ["post", post.id])
+
 	tx.set(["profile", post.author, post.created, post.id], null)
+	inc(tx, ["profile", post.author])
 
 	// Add post to timeline
+	check(tx, ["followers", post.author])
 	for (const { key } of tx.list({ prefix: ["followers", post.author] })) {
 		const [_1, _2, userId] = key
 		indexPost(tx, userId, post)
@@ -178,30 +205,45 @@ const createPost = (tx: any, post: any) => {
 
 const unindexPost = (tx: any, userId: string, post: any) => {
 	tx.delete(["timeline", userId, post.created, post.id])
+	inc(tx, ["timeline", userId])
+
 	tx.delete(["calendar", userId, post.start, post.end, post.id], null)
+	inc(tx, ["calendar", userId])
 }
 
 const deleteFollow = (tx: any, from: string, to: string) => {
+	check(tx, ["follows", from, to])
 	const follow = tx.get(["follows", from, to])
 
 	tx.delete(["follows", follow.from, follow.to])
+	inc(tx, ["follows", follow.from])
+
 	tx.delete(["followers", follow.to, follow.from])
+	inc(tx, ["followers", follow.to])
 
 	// Remove posts from timeline.
+	check(tx, ["profile", follow.to])
 	for (const { key } of tx.list({ prefix: ["profile", follow.to] })) {
 		const [_1, _2, _3, postId] = key
+
+		check(tx, ["post", postId])
 		const post = tx.get(["post", postId])
 		unindexPost(tx, follow.from, post)
 	}
 }
 
 const deletePost = (tx: any, postId: any) => {
+	check(tx, ["post", postId])
 	const post = tx.get(["post", postId])
 
 	tx.delete(["post", post.id], post)
+	inc(tx, ["post", postId])
+
 	tx.delete(["profile", post.author, post.created, post.id], null)
+	inc(tx, ["profile", post.author])
 
 	// Add post to timeline
+	check(tx, ["followers", post.author])
 	for (const { key } of tx.list({ prefix: ["followers", post.author] })) {
 		const [_1, _2, userId] = key
 		unindexPost(tx, userId, post)
@@ -209,20 +251,27 @@ const deletePost = (tx: any, postId: any) => {
 }
 
 const deleteUser = (tx: any, userId: string) => {
+	check(tx, ["user", userId])
 	const user = tx.get(["user", userId])
+
 	tx.delete(["user", user.id], user)
+	inc(tx, ["user", user.id])
+
 	tx.delete(["usernames", user.username, user.id], null)
 
+	check(tx, ["follows", userId])
 	for (const { key } of tx.list({ prefix: ["follows", userId] })) {
 		const [_1, from, to] = key
 		deleteFollow(tx, from, to)
 	}
 
+	check(tx, ["followers", userId])
 	for (const { key } of tx.list({ prefix: ["followers", userId] })) {
 		const [_1, to, from] = key
 		deleteFollow(tx, from, to)
 	}
 
+	check(tx, ["profile", userId])
 	for (const { key } of tx.list({ prefix: ["profile", userId] })) {
 		const [_1, _2, _3, postId] = key
 		deletePost(tx, postId)
