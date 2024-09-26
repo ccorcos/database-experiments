@@ -94,18 +94,6 @@ Now, lets figure out how to use these abstractions together with some examples.
 import * as t from "./examples/dataTypes"
 
 // A social network.
-// const Schema = [
-// 	{ key: ["user", t.uuid], value: t.object({ id: t.uuid, username: t.string }) },
-// 	{ key: ["usernames", t.string, t.uuid], value: null },
-// 	{ key: ["follows", t.uuid, t.uuid], value: { from: t.uuid, to: t.uuid, created: t.datetime } },
-// 	{ key: ["followers", t.uuid, t.uuid], value: null },
-// 	{ key: ["post", t.uuid], value: t.object({ id: t.uuid, created: t.datetime, author: t.uuid, content: t.string }) },
-// 	/* user.id, created, post.id  */
-// 	{ key: ["profile", t.uuid, t.datetime, t.uuid], value: null },
-// 	/* user.id, created, post.id  */
-// 	{ key: ["profile", t.uuid, t.datetime, t.uuid], value: null },
-// ]
-
 const UserSchema = t.object({ id: t.uuid, username: t.string })
 const FollowSchema = t.object({ from: t.uuid, to: t.uuid, created: t.datetime })
 const PostSchema = t.object({
@@ -277,3 +265,9 @@ const deleteUser = (tx: any, userId: string) => {
 		deletePost(tx, postId)
 	}
 }
+
+/************************************************************************************
+
+-> API2.ts
+
+*************************************************************************************/
