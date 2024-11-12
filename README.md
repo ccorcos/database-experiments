@@ -568,6 +568,26 @@ The good news is that the in-memory tree is still wicked fast – faster than SQ
 └─────────┴──────────────┴──────────────────────────────────────────────────────┴──────────┴──────────┴─────────┘
 ```
 
+## Next...
+
+- lmdb as a storage backend
+- store tree as [layer, ...key] in an OKV just like Okra that Joel made.
+
+Lets make some simplifying assumptions too - all concurrency just uses a RWLock. We could eventually batch writes together for perf if we want but probably don't need to -- lets just measure.
+
+Lets also consider the merklized tree that Okra is doing, but also generalize that with a GiST and reducer kind of thing...
+
+
+
+
+
+
+
+
+
+
+
+
 # What's next?
 
 - RW lock should be on at the storage layer.
@@ -578,8 +598,6 @@ The good news is that the in-memory tree is still wicked fast – faster than SQ
 - Query generator transaction abstraction.
 
 - version updates and stuff is application-layer.
-
-
 
 
 
